@@ -30,7 +30,10 @@ komplett aus diesen zwei Listen abgeleitet. „Alle Provider die es gibt" hinzuf
 Einträge in `handai.json`, **kein Code**.
 
 Der Nutzer wählt frei **Provider × Modus × Arbeitsverzeichnis**. Nicht jede Kombi ist
-erlaubt (`allowed_modes` pro Provider) — z.B. `hermes` nur remote.
+erlaubt (`allowed_modes` pro Provider) — z.B. `codex-remote` nur remote. Aus den
+Settings angelegte Ziele liegen unter `$HANDAI_STATE/devices.json` und werden als
+`managed-*`-Modi ergänzt. Neben SSH gibt es direkte `openclaw-gateway`- und
+`hermes-api`-Transporte; deren Clients laufen lokal in einer persistenten tmux-Session.
 
 ### 2. „Mitten im Betrieb wechseln" = tmux-Sessions
 Jede Sitzung läuft in `tmux new-session -A -s <name>`:
@@ -39,6 +42,9 @@ Jede Sitzung läuft in `tmux new-session -A -s <name>`:
 - Lokale Sessions leben auf dem tmux-Server des Geräts; **Remote-Sessions leben auf
   dem tmux-Server des Remote-Hosts** → der Remote-Agent läuft weiter, auch wenn du
   das Handheld detachst oder es in den Standby geht.
+- Der typische Sofa-Flow ist remote: Der Handheld überträgt Ein- und Ausgabe,
+  während Claude, Codex oder Hermes auf Devbox bzw. Cloud arbeiten. Builds und
+  Agentenprozesse belasten den Handheld daher nicht.
 - Der Session-Name ist stabil pro `(provider, mode, workdir)` → du re-attachst immer
   dieselbe laufende Sitzung statt Duplikate zu erzeugen.
 
@@ -46,13 +52,14 @@ Damit ist Provider-/Modus-Wechsel nur „andere Session attachen" — verlustfre
 sofort. Das Cockpit-Menü *Sessions* zeigt alle laufenden (lokal + jede Remote-Box).
 
 ## Auth-Modelle
-- `oauth-device` (claude, codex): der Provider hat einen eigenen `login`-Flow, der
+- `oauth-device`: der Provider hat einen eigenen `login`-Flow, der
   Device-Code + URL zeigt. Du öffnest die URL am Handy. HandAI sieht **nie** ein Token.
   Ideal für ein tastaturloses Gerät.
-- `token-env` (hermes, codex-remote, opencode): HandAI hält ein Token im Secret-Store
+- `token-env`: HandAI hält einen API-Key im Secret-Store
   und injiziert es als Env-Var. Eingabe per On-Screen-Keyboard. Siehe `PROVIDERS.md`
   zur Remote-Bereitstellung (Token darf nicht in der Prozessliste des Remote-Hosts
-  landen).
+  landen). Ein Provider kann beide Methoden anbieten; OAuth ist dann der
+  interaktive Standard und der API-Key bleibt als Alternative verfügbar.
 
 ## Warum stdlib-only Python
 Der Core nutzt ausschließlich die Python-Standardbibliothek (json, curses, subprocess,
@@ -67,9 +74,21 @@ eigener 5×7-Bitmap-Schrift. SDL skaliert diese Fläche auf den Ausgang und nutz
 auf dem Handheld KMSDRM; X11, Wayland, pygame und externe Fonts sind unnötig.
 Tastatur- und SDL-Gamecontroller-Events werden auf d-pad, A, B und Start
 normalisiert. Sämtliche Texteingaben laufen über die integrierte Pixel-Tastatur.
+Die zehn Farb-Skins bestehen ausschließlich aus Rendering-Paletten, wirken daher
+auf sämtliche Screens und benötigen keine zusätzlichen Bilddateien. Die Auswahl
+wird unter `$HANDAI_STATE/ui.json` gespeichert und beim GUI-Start geladen.
 
 Vor dem Attach an tmux/SSH gibt die GUI SDL frei, damit die Terminal-UI des
 Agents die Konsole übernehmen kann. Nach dem Detach wird der Renderer neu
 erstellt. Die Pixel- und curses-Oberflächen verwenden dieselben Core-Module;
 `--ui auto|pixel|text` wählt das Frontend. Das Geräte-Init fordert die Pixel-GUI
 explizit an, während das kleine serielle QEMU-Image automatisch curses nutzt.
+
+## Phone-Keyboard-Bridge
+
+`handai.phone` stellt für eine explizit gewählte tmux-Session kurzzeitig einen
+stdlib-HTTP-Dienst bereit. Ein zufälliges Pairing-Token ist Bestandteil des
+QR-Links und wird für GET und POST geprüft. Lokale Eingaben gehen literal über
+`tmux send-keys -l`; für Remote-Ziele wird der Text base64-kodiert über SSH in
+einen tmux-Buffer geladen. Damit erreicht Nutztext keine lokale Shell-Auswertung.
+Eine aktive Tailscale-Adresse wird gegenüber unverschlüsseltem LAN bevorzugt.

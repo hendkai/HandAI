@@ -9,6 +9,7 @@ an SDL2/DRM front-end that drives the identical core (config/router/tmux).
 from __future__ import annotations
 
 import curses
+import shlex
 import subprocess
 from typing import Callable
 
@@ -72,19 +73,21 @@ class Cockpit:
         stdscr.refresh()
 
     # -- provider login ------------------------------------------------------
-    def _login(self, stdscr, p: Provider):
-        if p.auth == "none":
+    def _login(self, stdscr, p: Provider, kind: str | None = None, host: str | None = None):
+        auth = kind or p.auth
+        if auth == "none":
             self._toast(stdscr, f"{p.label} needs no login")
             return
-        if p.auth == "oauth-device":
+        if auth == "oauth-device":
             if not p.login_command:
                 self._toast(stdscr, f"{p.label}: no login_command configured")
                 return
             # Run the provider's own device-code flow; user opens URL on phone.
-            self._interactive(stdscr, p.login_command)
+            argv = p.login_command if not host else remote.ssh_argv(host,shlex.join(p.login_command),tty=True)
+            self._interactive(stdscr, argv)
             self.status = f"ran {p.label} login"
             return
-        if p.auth == "token-env":
+        if auth == "token-env":
             existing = self.secrets.get(p.id) or ""
             tok = prompt(stdscr, f"{p.label} token ({p.token_env})", initial=existing, secret=True)
             if tok is None:
@@ -97,7 +100,7 @@ class Cockpit:
                 self.status = f"cleared token for {p.label}"
 
     def _auth_ok(self, p: Provider) -> bool:
-        if p.auth == "token-env":
+        if p.supports_auth("token-env") and not p.supports_auth("oauth-device"):
             return self.secrets.has(p.id)
         return True  # oauth-device / none: handled by the CLI itself
 
@@ -107,7 +110,7 @@ class Cockpit:
                        lambda x: f"{x.label}  [{x.auth}]")
         if not p:
             return
-        if p.auth == "token-env" and not self.secrets.has(p.id):
+        if p.supports_auth("token-env") and not p.supports_auth("oauth-device") and not self.secrets.has(p.id):
             self._toast(stdscr, f"{p.label}: no token yet - opening login")
             self._login(stdscr, p)
             if not self.secrets.has(p.id):
@@ -149,7 +152,7 @@ class Cockpit:
         # so exporting into our environ is enough. (Remote token provisioning is
         # documented separately; see docs/PROVIDERS.md.)
         import os
-        if p.auth == "token-env" and p.token_env:
+        if p.supports_auth("token-env") and p.token_env:
             tok = self.secrets.get(p.id)
             if tok:
                 os.environ[p.token_env] = tok
@@ -193,8 +196,15 @@ class Cockpit:
         act = self._pick(stdscr, p.label, actions, lambda x: x)
         if act is None:
             return
-        if act in ("Login", "Enter token"):
-            self._login(stdscr, p)
+        if act == "OAuth login":
+            self._login(stdscr, p, "oauth-device")
+        elif act == "OAuth login on remote":
+            hosts = sorted({m.host for m in self.cfg.modes_for(p) if m.is_remote and m.host})
+            host = self._pick(stdscr, "OAuth host", hosts, lambda x: x)
+            if host:
+                self._login(stdscr, p, "oauth-device", host)
+        elif act == "Enter API key":
+            self._login(stdscr, p, "token-env")
         elif act == "Push token to host":
             self._push_token(stdscr, p)
         elif act == "Clear token":
@@ -202,17 +212,19 @@ class Cockpit:
             self.status = f"cleared token for {p.label}"
 
     def _provider_actions(self, p: Provider) -> list[str]:
-        if p.auth == "oauth-device":
-            return ["Login"]
-        if p.auth == "token-env":
-            acts = ["Enter token"]
+        acts = []
+        if p.supports_auth("oauth-device"):
+            acts.append("OAuth login")
+            if any(m.is_remote for m in self.cfg.modes_for(p)):
+                acts.append("OAuth login on remote")
+        if p.supports_auth("token-env"):
+            acts.append("Enter API key")
             # offer host provisioning if this provider can run on any ssh mode
             if any(m.is_remote for m in self.cfg.modes_for(p)) and self.secrets.has(p.id):
                 acts.append("Push token to host")
             if self.secrets.has(p.id):
                 acts.append("Clear token")
-            return acts
-        return ["(no auth needed)"]
+        return acts or ["(no auth needed)"]
 
     def _push_token(self, stdscr, p: Provider):
         if not p.token_env or not self.secrets.has(p.id):

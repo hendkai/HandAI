@@ -10,6 +10,7 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import io
 import tarfile
@@ -17,13 +18,14 @@ import zipfile
 
 from handai.config import Config
 from handai.network import Network, detect_iface, parse_saved_networks, parse_scan_results
-from handai import skills
+from handai import devices, diagnostics, preferences, skill_catalog, skills
 from handai.providers import Mode, Provider, parse_modes, parse_providers
 from handai.remote import _export_line
 from handai.router import _cd_expr, build_target, session_name
 from handai.secrets import SecretStore
 from handai import tmux
-from handai.pixelgui import PixelCockpit, _FONT
+from handai import phone, tailscale
+from handai.pixelgui import PixelCockpit, THEMES, load_theme, save_theme, _FONT
 
 
 def _claude():
@@ -62,6 +64,23 @@ class TestProviders(unittest.TestCase):
         with self.assertRaises(ValueError):
             parse_modes([{"id": "r", "transport": "ssh"}])
 
+    def test_gateway_mode_needs_endpoint(self):
+        with self.assertRaises(ValueError):
+            parse_modes([{"id":"g","transport":"openclaw-gateway"}])
+        mode=parse_modes([{"id":"g","transport":"openclaw-gateway","endpoint":"wss://claw.example"}])[0]
+        self.assertTrue(mode.is_remote)
+        self.assertFalse(mode.is_ssh)
+
+    def test_multiple_auth_methods(self):
+        p=parse_providers([{"id":"both","command":["both"],"auth_methods":["oauth-device","token-env"],"token_env":"BOTH_KEY","login_command":["both","login"]}])[0]
+        self.assertEqual(p.auth,"oauth-device")
+        self.assertTrue(p.supports_auth("oauth-device"))
+        self.assertTrue(p.supports_auth("token-env"))
+
+    def test_none_cannot_be_combined(self):
+        with self.assertRaises(ValueError):
+            parse_providers([{"id":"bad","command":["bad"],"auth_methods":["none","token-env"]}])
+
     def test_allows_mode(self):
         p = _claude()
         self.assertTrue(p.allows_mode("local"))
@@ -80,6 +99,56 @@ class TestPixelGuiPure(unittest.TestCase):
         for char in "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 /._-:@#+[]()!?":
             self.assertIn(char, _FONT)
         self.assertTrue(all(len(glyph) == 7 for glyph in _FONT.values()))
+
+    def test_ten_unique_themes(self):
+        self.assertEqual(len(THEMES), 10)
+        self.assertEqual(len({theme.id for theme in THEMES}), 10)
+        self.assertEqual(len({theme.bg for theme in THEMES}), 10)
+
+    def test_theme_persistence_and_bad_file_fallback(self):
+        with tempfile.TemporaryDirectory() as d:
+            path=Path(d)/"ui.json"
+            save_theme(THEMES[6],path)
+            self.assertEqual(load_theme(path),THEMES[6])
+            path.write_text("not json","utf-8")
+            self.assertEqual(load_theme(path),THEMES[0])
+
+
+class TestTailscale(unittest.TestCase):
+    def test_parse_status(self):
+        raw=json.dumps({"BackendState":"Running","TailscaleIPs":["100.64.1.2"],"Self":{"DNSName":"handai.example.ts.net."}})
+        state=tailscale.parse_status(raw)
+        self.assertTrue(state.online)
+        self.assertEqual(state.ips,("100.64.1.2",))
+        self.assertEqual(state.name,"handai.example.ts.net")
+
+    def test_login_url_only_accepts_tailscale(self):
+        self.assertEqual(tailscale.parse_login_url("open https://login.tailscale.com/a/abc-123"),"https://login.tailscale.com/a/abc-123")
+        self.assertIsNone(tailscale.parse_login_url("https://evil.example/a/abc"))
+
+
+class TestPhoneKeyboard(unittest.TestCase):
+    def test_safe_ip(self):
+        self.assertEqual(phone.safe_ip(["::1","100.70.1.2"]),"100.70.1.2")
+        self.assertIsNone(phone.safe_ip(["bad","127.0.0.1"]))
+
+    def test_parse_ascii_and_binary_pbm(self):
+        self.assertEqual(phone.parse_pbm(b"P1\n2 2\n1 0\n0 1\n"),[[True,False],[False,True]])
+        self.assertEqual(phone.parse_pbm(b"P4\n8 1\n\xa0"),[[True,False,True,False,False,False,False,False]])
+
+    @patch("handai.phone.subprocess.run")
+    def test_remote_text_is_base64_not_shell_text(self,run):
+        run.return_value.returncode=0;run.return_value.stderr=""
+        session=tmux.SessionInfo("handai-safe",1,False,"dev@box")
+        ok,_=phone.send_session_text(session,"hello; touch /tmp/no",True)
+        self.assertTrue(ok)
+        command=run.call_args.args[0][-1]
+        self.assertNotIn("touch /tmp/no",command)
+        self.assertIn("base64 -d",command)
+
+    def test_rejects_oversize_text(self):
+        session=tmux.SessionInfo("handai-safe",1,False,None)
+        self.assertFalse(phone.send_session_text(session,"x"*(phone.MAX_TEXT+1))[0])
 
 
 class TestCdExpr(unittest.TestCase):
@@ -117,8 +186,8 @@ class TestRouter(unittest.TestCase):
     def test_remote_target_is_ssh(self):
         t = build_target(_hermes(), DEVBOX, "/workspace/api")
         self.assertEqual(t.argv[0], "ssh")
-        self.assertEqual(t.argv[1], "-t")
-        self.assertEqual(t.argv[2], "dev@box")
+        self.assertIn("-t",t.argv)
+        self.assertIn("dev@box",t.argv)
         # remote token-env sources the provisioned env file
         self.assertIn(".handai_env", t.argv[-1])
 
@@ -132,6 +201,68 @@ class TestRouter(unittest.TestCase):
         self.assertEqual(a, b)
         c = session_name(_claude(), DEVBOX, "~/work/proj")
         self.assertNotEqual(a, c)  # different mode → different session
+
+
+    def test_openclaw_gateway_runs_local_client_in_tmux(self):
+        provider=Provider("openclaw","OpenClaw",["openclaw","tui"])
+        mode=Mode("managed-home","Home Claw","openclaw-gateway",endpoint="wss://claw.example")
+        target=build_target(provider,mode,"~")
+        self.assertEqual(target.argv[0],"tmux")
+        self.assertIn("wss://claw.example",target.display)
+
+
+class TestManagedDevices(unittest.TestCase):
+    def test_registry_roundtrip_and_remove(self):
+        with tempfile.TemporaryDirectory() as d:
+            path=Path(d)/"devices.json"
+            item=devices.RemoteDevice("desk","Desk","ssh","dev@desk.local","~/src")
+            devices.upsert(item,path)
+            self.assertEqual(devices.load(path),[item])
+            self.assertEqual(devices.remove("desk",path),[])
+
+    def test_address_validation(self):
+        self.assertEqual(devices.validate_ssh_host("dev@box.local"),"dev@box.local")
+        with self.assertRaises(ValueError):devices.validate_ssh_host("box; reboot")
+        self.assertEqual(devices.validate_gateway_url("ws://100.64.1.2:18789"),"ws://100.64.1.2:18789")
+        self.assertEqual(devices.validate_gateway_url("wss://claw.example"),"wss://claw.example")
+        with self.assertRaises(ValueError):devices.validate_gateway_url("ws://claw.example")
+        self.assertEqual(devices.validate_hermes_url("http://100.64.1.3:8642"),"http://100.64.1.3:8642")
+        with self.assertRaises(ValueError):devices.validate_hermes_url("http://hermes.example")
+
+    def test_config_loads_managed_targets(self):
+        with tempfile.TemporaryDirectory() as d:
+            registry=Path(d)/"devices.json"
+            devices.save([devices.RemoteDevice("desk","Desk","ssh","dev@desk"),
+                          devices.RemoteDevice("claw","Claw","openclaw-gateway","wss://claw.example"),
+                          devices.RemoteDevice("hermes","Hermes","hermes-api","https://hermes.example")],registry)
+            cfg=Config([Provider("openclaw","OpenClaw",["openclaw"],allowed_modes=["local","devbox"]),
+                        Provider("localonly","Local",["local"],allowed_modes=["local"])],
+                       [LOCAL,DEVBOX],[])
+            cfg.reload_devices(registry)
+            ids=[m.id for m in cfg.modes_for(cfg.provider("openclaw"))]
+            self.assertIn("managed-desk",ids)
+            self.assertIn("managed-claw",ids)
+            hermes=Provider("hermes","Hermes",["hermes"],allowed_modes=["devbox"])
+            cfg.providers.append(hermes)
+            self.assertIn("managed-hermes",[m.id for m in cfg.modes_for(hermes)])
+            self.assertNotIn("managed-desk",[m.id for m in cfg.modes_for(cfg.provider("localonly"))])
+
+
+class TestPreferences(unittest.TestCase):
+    def test_first_run_and_button_map_persist(self):
+        with tempfile.TemporaryDirectory() as d:
+            path=Path(d)/"prefs.json"
+            self.assertFalse(preferences.completed(path))
+            preferences.mark_completed(path)
+            preferences.save_button_map({9:"a"},path)
+            self.assertTrue(preferences.completed(path))
+            self.assertEqual(preferences.button_map(path),{9:"a"})
+
+
+class TestDiagnostics(unittest.TestCase):
+    def test_summary_marks_failures(self):
+        ok,lines=diagnostics.summary([diagnostics.Check("one",True,"ready"),diagnostics.Check("two",False,"missing")])
+        self.assertFalse(ok);self.assertEqual(lines,["OK one: ready","FAIL two: missing"])
 
 
 class TestTmuxParse(unittest.TestCase):
@@ -167,6 +298,15 @@ class TestSecrets(unittest.TestCase):
             self.assertEqual(store2.get("hermes"), "tok-123")
             store2.clear("hermes")
             self.assertFalse(SecretStore(Path(d) / "secrets.json").has("hermes"))
+
+    def test_pin_encryption_locks_and_authenticates(self):
+        with tempfile.TemporaryDirectory() as d:
+            path=Path(d)/"secrets.json";store=SecretStore(path);store.set("p","secret")
+            store.enable_pin("2468")
+            self.assertNotIn('"secret"',path.read_text("utf-8"))
+            locked=SecretStore(path);self.assertTrue(locked.locked);self.assertIsNone(locked.get("p"))
+            self.assertFalse(locked.unlock("wrong"));self.assertTrue(locked.unlock("2468"))
+            self.assertEqual(locked.get("p"),"secret")
 
 
 class TestRemoteShPath(unittest.TestCase):
@@ -237,6 +377,19 @@ class TestSavedNetworksParse(unittest.TestCase):
     def test_parse(self):
         got = parse_saved_networks(self.SAMPLE)
         self.assertEqual(got, [("0", "HomeNet", "[CURRENT]"), ("1", "CafeFree", "")])
+
+
+class TestSkillCatalog(unittest.TestCase):
+    def test_parse_public_leaderboard_rows(self):
+        row='''<a href="/owner/repo/my-skill"><span>1</span><h3>My Skill</h3><p>owner/repo</p><svg></svg><span class="font-mono text-sm text-foreground">12.3K</span></a>'''
+        parsed=skill_catalog.parse_leaderboard(row)
+        self.assertEqual(len(parsed),1)
+        self.assertEqual(parsed[0].slug,"my-skill")
+        self.assertEqual(parsed[0].source,"owner/repo")
+        self.assertEqual(parsed[0].installs,"12.3K")
+
+    def test_rejects_unknown_view(self):
+        with self.assertRaises(ValueError):skill_catalog.fetch("made-up")
 
 
 class TestSkillsSource(unittest.TestCase):

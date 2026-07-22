@@ -8,7 +8,7 @@ HANDAI_TTY="${HANDAI_TTY:-/dev/tty1}"
 HANDAI_UI="${HANDAI_UI:-pixel}"
 HANDAI_FULLSCREEN="${HANDAI_FULLSCREEN:-1}"
 
-DAEMON_ENV="HANDAI_CONFIG=/etc/handai/handai.json HANDAI_STATE=/data/handai PYTHONPATH=/opt/handai HANDAI_TMUX_CONF=/etc/handai/tmux.conf HANDAI_UI=$HANDAI_UI HANDAI_FULLSCREEN=$HANDAI_FULLSCREEN TERM=linux"
+DAEMON_ENV="HOME=/data/handai/home XDG_CONFIG_HOME=/data/handai/home/.config HANDAI_CONFIG=/etc/handai/handai.json HANDAI_STATE=/data/handai PYTHONPATH=/opt/handai HANDAI_TMUX_CONF=/etc/handai/tmux.conf HANDAI_UI=$HANDAI_UI HANDAI_FULLSCREEN=$HANDAI_FULLSCREEN TERM=linux"
 
 start() {
 	# mount the persistent /data partition if one exists (device only). Node name
@@ -22,7 +22,16 @@ start() {
 			fi
 		done
 	fi
-	mkdir -p /data/handai
+	mkdir -p /data/handai /data/handai/home/.config
+	# Tailscale keeps node identity on the persistent data partition. Buildroot's
+	# package has no BusyBox/SysV service, so start the daemon here after /data is
+	# mounted. Login itself is initiated from the cockpit and completed by phone.
+	if command -v tailscaled >/dev/null 2>&1 && ! pidof tailscaled >/dev/null 2>&1; then
+		mkdir -p /data/tailscale /var/run/tailscale
+		tailscaled --state=/data/tailscale/tailscaled.state \
+			--socket=/var/run/tailscale/tailscaled.sock \
+			>/data/handai/tailscaled.log 2>&1 &
+	fi
 	# boot marker on the console (init stdout) — CI/QEMU smoke test greps this
 	echo "[handai] boot ok — starting cockpit on $HANDAI_TTY"
 	# bring up WiFi in the background (non-fatal if no adapter yet)

@@ -118,7 +118,8 @@ def safe_extract_tar(tf: tarfile.TarFile, dest: Path) -> None:
             link_dest = (dest / m.name).parent / m.linkname
             if not _within(dest, link_dest):
                 raise ValueError(f"unsafe link in archive: {m.name!r} -> {m.linkname!r}")
-    tf.extractall(dest)
+    try:tf.extractall(dest,filter="data")
+    except TypeError:tf.extractall(dest)
 
 
 def safe_extract_zip(zf: zipfile.ZipFile, dest: Path) -> None:
@@ -213,6 +214,24 @@ def install(hub: Path, spec: str, timeout: float = 60.0) -> Skill:
         shutil.rmtree(dest)
     tmp.replace(dest)
     return Skill(src.name, dest, _read_manifest(dest))
+
+
+def install_catalog(hub:Path,source_url:str,slug:str,timeout:float=60.0)->Skill:
+    """Install one selected skill from a catalog repository collection."""
+    name=slugify(slug);repo_tmp=hub/(f".tmp-catalog-{name}");dest=hub/name
+    shutil.rmtree(repo_tmp,ignore_errors=True)
+    try:
+        result=subprocess.run(["git","clone","--depth","1",source_url,str(repo_tmp)],capture_output=True,text=True,timeout=timeout)
+        if result.returncode!=0:raise ValueError(f"git clone failed: {result.stderr.strip()}")
+        matches=[p for p in repo_tmp.rglob(name) if p.is_dir() and (p/"SKILL.md").is_file()]
+        if not matches:
+            matches=[p.parent for p in repo_tmp.rglob("SKILL.md") if slugify(p.parent.name)==name]
+        if not matches:raise ValueError(f"skill folder {slug!r} not found in repository")
+        chosen=min(matches,key=lambda p:len(p.parts))
+        if dest.exists():shutil.rmtree(dest)
+        shutil.copytree(chosen,dest)
+        return Skill(name,dest,_read_manifest(dest))
+    finally:shutil.rmtree(repo_tmp,ignore_errors=True)
 
 
 def _download(url: str, timeout: float) -> bytes:

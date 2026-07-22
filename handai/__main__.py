@@ -20,9 +20,9 @@ def _check(cfg: Config, secrets: SecretStore) -> int:
     print(f"config OK - {len(cfg.providers)} providers - {len(cfg.modes)} modes\n")
     print("Providers:")
     for p in cfg.providers:
-        auth = p.auth
+        auth = "/".join(p.auth_methods or [p.auth])
         state = ""
-        if p.auth == "token-env":
+        if p.supports_auth("token-env"):
             state = "token set" if secrets.has(p.id) else "NO TOKEN"
         modes = ",".join(m.id for m in cfg.modes_for(p)) or "-"
         print(f"  {p.id:16} {auth:12} {state:10} cmd={' '.join(p.command):20} modes=[{modes}]")

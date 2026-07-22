@@ -11,6 +11,7 @@ import subprocess
 from dataclasses import dataclass
 
 from .providers import Mode
+from .remote import ssh_argv
 
 _FMT = "#{session_name}\t#{session_windows}\t#{?session_attached,attached,detached}"
 
@@ -61,8 +62,7 @@ def list_local(timeout: float = 3.0) -> list[SessionInfo]:
 def list_remote(host: str, timeout: float = 6.0) -> list[SessionInfo]:
     try:
         r = subprocess.run(
-            ["ssh", "-o", "BatchMode=yes", host,
-             f"tmux list-sessions -F '{_FMT}'"],
+            ssh_argv(host,f"tmux list-sessions -F '{_FMT}'",batch=True),
             capture_output=True, text=True, timeout=timeout,
         )
     except (OSError, subprocess.TimeoutExpired):
@@ -88,7 +88,7 @@ def kill(session: SessionInfo, timeout: float = 6.0) -> bool:
     try:
         if session.host:
             r = subprocess.run(
-                ["ssh", session.host, " ".join(cmd)],
+                ssh_argv(session.host," ".join(cmd),batch=True),
                 capture_output=True, text=True, timeout=timeout,
             )
         else:
@@ -102,5 +102,5 @@ def attach_argv(session: SessionInfo) -> list[str]:
     """argv that re-enters an existing session (used by the cockpit to exec)."""
     inner = ["tmux", "attach-session", "-t", session.name]
     if session.host:
-        return ["ssh", "-t", session.host, " ".join(inner)]
+        return ssh_argv(session.host," ".join(inner),tty=True)
     return inner

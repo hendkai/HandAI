@@ -7,10 +7,15 @@
 
 Eine **eigene Linux-Distro + Cockpit** für Retro-Handhelds (RG35xxSP & andere
 Allwinner-H700-Geräte), die das Gerät zur **gamepad-bedienbaren Fernbedienung für
-AI-Coding-Agents** macht: `claude`, `codex`, `codex-remote`, `hermes`, `opencode`, …
+AI-Coding-Agents** macht: `claude`, `codex`, `codex-remote`, `hermes`, `opencode`, `openclaw`, …
 
 Du wählst pro Sitzung **Provider × Modus × Arbeitsverzeichnis** und kannst **mitten im
 Betrieb** Provider *und* Modus wechseln — der vorherige Agent läuft dabei weiter.
+
+Der Handheld ist dabei primär das **mobile Eingabe- und Kontrollgerät**: Du promptest
+vom Sofa per Gamepad, Bildschirmtastatur oder gekoppeltem Handy. Claude, Codex,
+Hermes oder OpenCode führen die Arbeit per SSH auf der gewählten Devbox bzw.
+Cloud-Sandbox aus. Lokale Ausführung bleibt als Option erhalten.
 
 - **Lokal** = die Agent-CLI läuft auf dem Handheld und spricht die Cloud-API des
   Providers an (kein lokales Modell — 1 GB RAM gibt das nicht her).
@@ -34,7 +39,9 @@ handai/                Core (stdlib-only Python) + curses-Referenz-UI
   router.py            (provider,mode,workdir) → persistentes tmux/ssh-Target
   tmux.py              Session-Inventar lokal + je Remote-Host
   network.py           WLAN-Steuerung (wpa_cli) fürs Netzwerk-Menü
-  remote.py            sichere Remote-Token-Provisionierung (Token via ssh-stdin)
+  remote.py            SSH-Key-Kopplung, Diagnose und sichere Token-Provisionierung
+  devices.py           persistente SSH-, OpenClaw- und Hermes-Remoteziele
+  hermes_remote.py     Terminal-Client für die offizielle Hermes Sessions API
   skills.py            zentraler Skills-Hub: Install aus dem Internet + Tool-Adapter
   osk.py               On-Screen-Keyboard (nur d-pad + A/B)
   pixelgui.py          SDL2-Pixel-Art-GUI (640x480, Gamepad + Bildschirmtastatur)
@@ -48,6 +55,7 @@ docs/DISTRO.md         Eigene Distro: Buildroot + H700-Bootchain + Boot→Cockpi
 docs/TESTING.md        Testen ohne Hardware: Host · QEMU aarch64 · Gerät
 docs/PROVIDERS.md      Provider hinzufügen, Auth, Remote-Token-Bereitstellung
 docs/SKILLS.md         Zentraler Skills-Hub: Install aus dem Internet, Tool-Adapter
+docs/PHONE_KEYBOARD.md Tailscale-Login + sichere Handy-Tastatur per QR-Pairing
 ```
 
 ## Steuerung — alles mit den Handheld-Tasten?
@@ -64,7 +72,7 @@ docs/SKILLS.md         Zentraler Skills-Hub: Install aus dem Internet, Tool-Adap
 ## Testen ohne Hardware
 Drei Ebenen, nur die oberste braucht das Gerät (Details in [docs/TESTING.md](docs/TESTING.md)):
 ```bash
-make test    # Ebene 1: Kernlogik (20 Tests)
+make test    # Ebene 1: Kernlogik und lokale Integrationen (64 Tests)
 make demo    # Ebene 1: Cockpit-Flow offline mit Fake-Providern (keine Accounts)
 # Ebene 2: ganzes Userland in QEMU aarch64 (mainline-Kernel, keine Vendor-Blobs):
 #   make BR2_EXTERNAL=…/handai-os qemu_aarch64_handai_defconfig && make -j"$(nproc)"
@@ -107,9 +115,9 @@ python -m handai --ui pixel
 ## Aktueller Stand
 - ✅ **Core** (stdlib-only): Config, Provider/Modi, Router (local+ssh, tmux-persistent),
   Session-Inventar, Secret-Store, WLAN, sichere Remote-Token-Provisionierung,
-  On-Screen-Keyboard. **20 Tests grün** (`make test`).
-- ✅ **curses-Cockpit**, voll d-pad-navigierbar: New session · Sessions (attach/kill) ·
-  Providers/Login (oauth-device + token-env + „Push token to host") · Network · Settings.
+  On-Screen-Keyboard. **64 Tests grün** (`make test`).
+- ✅ **Remote-first Cockpit**, voll d-pad-navigierbar: New session · Sessions (attach/kill) ·
+  Providers/Login (getrennte Local-/Remote-Bereiche, OAuth + API-Key) · Network · Settings.
 - ✅ **Distro-Quelle fertig**: Buildroot external tree unter `handai-os/` — drei
   defconfigs (full / **remote** / qemu), handai-Paket, Init (Boot→Cockpit, kein getty,
   Exec-Bit-Fix, `/data`-Mount), WLAN-Bringup + Preflight, Agent-Installer, SD-Layout,
@@ -118,7 +126,16 @@ python -m handai --ui pixel
   die Vendor-Blobs `Image` / `*.dtb` / `boot.scr` / `u-boot-*.bin` aus einer
   RG35xxSP-CFW in `handai-os/board/rg35xxsp/blobs/` legen. Danach baut das Image durch.
 - ✅ **SDL2/DRM-Pixel-Art-Frontend**: natives 640×480-Dashboard, Bitmap-Schrift,
-  Gamepad-Navigation und Bildschirmtastatur; curses bleibt als serieller/QEMU-Fallback.
+  Gamepad-Navigation, Bildschirmtastatur und zehn dauerhaft wählbare Farb-Skins;
+  curses bleibt als serieller/QEMU-Fallback.
+- ✅ **Tailscale + Phone Keyboard**: Tailscale-Login per QR-Code und temporär
+  gekoppelte Handy-Webtastatur für lokale wie entfernte tmux-Sessions.
+- ✅ **Gamepad-Skillkatalog**: Top/Most-downloaded, Trending und Hot von skills.sh
+  durchsuchen und installieren, ohne eine Repository-Adresse eintippen zu müssen.
+- ✅ **Remote-Geräte-Assistent**: SSH-Rechner mit Key-Pairing und Diagnose sowie
+  direkte OpenClaw-WebSocket- und Hermes-Sessions-API-Ziele persistent verwalten.
+- ✅ **Geführter Erststart + Sicherheit**: WLAN, Tailscale, Remoteziel und OAuth;
+  optional PIN-verschlüsselter Credential-Store und einmalige QR-Handy-Kopplung.
 
 ## Provider-CLI-Flags
 Die `command`/`login_command`/`token_env` in der Config sind sinnvolle Defaults, keine

@@ -17,8 +17,56 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from .devices import validate_ssh_host
+
 REMOTE_ENV_FILE = "~/.handai_env"
 REMOTE_HUB = "~/.local/state/handai/skills"  # where the mirrored skills hub lives
+SSH_SAFE_OPTS = ["-o", "StrictHostKeyChecking=accept-new", "-o", "ConnectTimeout=8"]
+
+
+def ssh_argv(host: str, *args: str, batch: bool = False, tty: bool = False) -> list[str]:
+    validate_ssh_host(host)
+    opts = [*SSH_SAFE_OPTS]
+    if batch:
+        opts += ["-o", "BatchMode=yes"]
+    if tty:opts.append("-t")
+    return ["ssh", *opts, host, *args]
+
+
+def diagnose(host: str, timeout: float = 12.0) -> tuple[bool, str]:
+    """Verify key login and the runtime required by HandAI remote sessions."""
+    try:
+        r = subprocess.run(ssh_argv(host, "command -v tmux >/dev/null && printf HANDAI_OK", batch=True),
+                           capture_output=True, text=True, timeout=timeout)
+    except (OSError, subprocess.TimeoutExpired, ValueError) as e:
+        return False, f"SSH failed: {e}"
+    if r.returncode == 0 and "HANDAI_OK" in r.stdout:
+        return True, "SSH key accepted; tmux ready"
+    detail = r.stderr.strip() or "connected, but tmux is missing"
+    return False, detail
+
+
+def ensure_key(path: Path | None = None) -> tuple[bool, str]:
+    key = path or (Path.home() / ".ssh" / "id_ed25519")
+    if key.exists() and key.with_suffix(".pub").exists():
+        return True, str(key.with_suffix(".pub"))
+    key.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        r = subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", str(key)],
+                           capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return False, str(e)
+    return (r.returncode == 0), (str(key.with_suffix(".pub")) if r.returncode == 0
+                                 else (r.stderr.strip() or "ssh-keygen failed"))
+
+
+def pair_command(host: str, public_key: str) -> list[str]:
+    """Interactive one-time password login; the public key itself is not secret."""
+    validate_ssh_host(host)
+    script=('cat "$1" | ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 "$2" '
+            "'umask 077; mkdir -p ~/.ssh; touch ~/.ssh/authorized_keys; "
+            "IFS= read -r key; grep -qxF \"$key\" ~/.ssh/authorized_keys || printf \"%s\\n\" \"$key\" >> ~/.ssh/authorized_keys; chmod 600 ~/.ssh/authorized_keys'")
+    return ["sh","-c",script,"handai-pair",public_key,host]
 
 
 def _export_line(var: str, token: str) -> str:
@@ -36,7 +84,7 @@ def push_token(host: str, var: str, token: str, timeout: float = 12.0) -> tuple[
     )
     try:
         r1 = subprocess.run(
-            ["ssh", "-o", "BatchMode=yes", host, prep],
+            ssh_argv(host, prep, batch=True),
             capture_output=True, text=True, timeout=timeout,
         )
     except (OSError, subprocess.TimeoutExpired) as e:
@@ -48,7 +96,7 @@ def push_token(host: str, var: str, token: str, timeout: float = 12.0) -> tuple[
     payload = _export_line(var, token)
     try:
         r2 = subprocess.run(
-            ["ssh", "-o", "BatchMode=yes", host, f"cat >> {REMOTE_ENV_FILE}"],
+            ssh_argv(host, f"cat >> {REMOTE_ENV_FILE}", batch=True),
             input=payload, capture_output=True, text=True, timeout=timeout,
         )
     except (OSError, subprocess.TimeoutExpired) as e:
@@ -67,7 +115,7 @@ def sync_hub(host: str, local_hub: Path, remote_hub: str = REMOTE_HUB,
         cmd = ["rsync", "-az", "--delete",
                f"{local.rstrip('/')}/", f"{host}:{remote_hub}/"]
         try:
-            r = subprocess.run(["ssh", "-o", "BatchMode=yes", host, f"mkdir -p {remote_hub}"],
+            r = subprocess.run(ssh_argv(host,f"mkdir -p {remote_hub}",batch=True),
                                capture_output=True, text=True, timeout=timeout)
             r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
         except (OSError, subprocess.TimeoutExpired) as e:
@@ -110,7 +158,7 @@ def link_remote(host: str, tool_dir: str, remote_hub: str = REMOTE_HUB,
         'ln -s "$hub" "$d"'
     )
     try:
-        r = subprocess.run(["ssh", "-o", "BatchMode=yes", host, script],
+        r = subprocess.run(ssh_argv(host,script,batch=True),
                            capture_output=True, text=True, timeout=timeout)
     except (OSError, subprocess.TimeoutExpired) as e:
         return False, f"link failed: {e}"

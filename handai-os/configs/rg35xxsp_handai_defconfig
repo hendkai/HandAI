@@ -28,6 +28,9 @@ BR2_PACKAGE_DHCPCD=y
 BR2_PACKAGE_IW=y
 BR2_PACKAGE_RFKILL=y
 BR2_PACKAGE_WIRELESS_REGDB=y
+BR2_PACKAGE_TAILSCALE=y
+BR2_PACKAGE_LIBQRENCODE=y
+BR2_PACKAGE_LIBQRENCODE_TOOLS=y
 # The WiFi chip's kernel module comes with the borrowed vendor kernel; its
 # firmware blob is board-specific — drop it in the overlay under lib/firmware/
 # and wire loading via opt/handai/net/chip.sh (see chip.sh.example).

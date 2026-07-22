@@ -9,18 +9,71 @@ from __future__ import annotations
 import ctypes
 import ctypes.util
 import importlib.util
+import json
 import os
+import shlex
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Sequence, TypeVar
 
-from . import network, remote, skills, tmux
+from . import devices, diagnostics, network, phone, preferences, remote, skill_catalog, skills, tailscale, tmux
 from .config import Config, config_path
 from .providers import Mode, Provider
 from .router import build_target
 from .secrets import SecretStore
 
 T = TypeVar("T")
+
+
+@dataclass(frozen=True)
+class Theme:
+    id: str
+    label: str
+    bg: tuple[int,int,int]
+    panel: tuple[int,int,int]
+    panel2: tuple[int,int,int]
+    ink: tuple[int,int,int]
+    muted: tuple[int,int,int]
+    cyan: tuple[int,int,int]
+    yellow: tuple[int,int,int]
+    pink: tuple[int,int,int]
+    green: tuple[int,int,int]
+
+
+THEMES = (
+    Theme("neon-night","NEON NIGHT",(10,14,25),(18,27,43),(28,39,57),(224,238,226),(112,132,145),(50,215,207),(250,199,64),(238,91,137),(94,211,118)),
+    Theme("gameboy","GAME BOY",(15,56,15),(48,98,48),(74,117,62),(155,188,15),(102,137,38),(139,172,15),(190,204,35),(79,123,35),(174,190,49)),
+    Theme("amber-crt","AMBER CRT",(20,12,4),(45,27,8),(67,39,10),(255,202,91),(173,113,42),(255,154,24),(255,214,102),(208,85,21),(235,171,54)),
+    Theme("arctic","ARCTIC ICE",(7,23,36),(14,45,65),(25,65,88),(226,247,255),(117,167,188),(85,218,255),(235,250,255),(123,151,255),(112,238,203)),
+    Theme("synthwave","SYNTHWAVE",(24,8,40),(48,17,68),(72,25,91),(255,232,255),(167,112,183),(40,240,255),(255,220,61),(255,52,175),(89,255,179)),
+    Theme("forest","FOREST CAMP",(8,24,18),(18,48,34),(30,68,47),(229,239,207),(125,151,110),(97,210,156),(239,195,100),(219,107,82),(145,207,92)),
+    Theme("candy","CANDY POP",(42,22,54),(74,35,77),(105,49,96),(255,239,246),(191,145,183),(83,226,221),(255,216,90),(255,109,177),(135,232,139)),
+    Theme("cobalt","COBALT CORE",(5,18,48),(10,38,85),(17,58,117),(224,237,255),(110,150,205),(44,169,255),(255,205,64),(255,95,109),(61,220,166)),
+    Theme("lava","LAVA FORGE",(30,8,6),(61,18,11),(91,29,15),(255,232,203),(181,124,92),(255,119,48),(255,205,71),(255,55,36),(158,221,80)),
+    Theme("mono","MONOCHROME",(9,9,11),(28,28,31),(47,47,52),(239,239,235),(143,143,143),(210,210,210),(255,255,255),(175,175,175),(225,225,225)),
+)
+THEME_BY_ID = {theme.id: theme for theme in THEMES}
+
+
+def theme_path() -> Path:
+    state=os.environ.get("HANDAI_STATE") or os.path.expanduser("~/.local/state/handai")
+    return Path(os.path.expandvars(os.path.expanduser(state)))/"ui.json"
+
+
+def load_theme(path:Path|None=None) -> Theme:
+    try:
+        data=json.loads((path or theme_path()).read_text("utf-8"))
+        return THEME_BY_ID.get(str(data.get("theme","")),THEMES[0])
+    except (OSError,ValueError,AttributeError):
+        return THEMES[0]
+
+
+def save_theme(theme:Theme,path:Path|None=None) -> None:
+    target=path or theme_path(); target.parent.mkdir(parents=True,exist_ok=True)
+    tmp=target.with_suffix(".tmp")
+    tmp.write_text(json.dumps({"theme":theme.id},indent=2)+"\n","utf-8")
+    tmp.replace(target)
 
 # Compact 5x7 font. Lowercase is intentionally rendered as uppercase: that is
 # both readable at handheld distance and gives the UI its console-pixel look.
@@ -75,7 +128,15 @@ class SDL:
         name=name or "libSDL2-2.0.so.0"
         try: self.s=ctypes.CDLL(name)
         except OSError as e: raise RuntimeError(f"SDL2 unavailable: {e}") from e
-        self._bind(); self.window=None; self.renderer=None; self.pad=None; self.open()
+        self._bind(); self.window=None; self.renderer=None; self.pad=None
+        self.button_map=preferences.button_map()
+        self.apply_theme(load_theme()); self.open()
+
+    def apply_theme(self,theme:Theme):
+        self.theme=theme
+        self.BG=theme.bg; self.PANEL=theme.panel; self.PANEL2=theme.panel2
+        self.INK=theme.ink; self.MUTED=theme.muted; self.CYAN=theme.cyan
+        self.YELLOW=theme.yellow; self.PINK=theme.pink; self.GREEN=theme.green
 
     def _bind(self):
         s=self.s
@@ -137,7 +198,7 @@ class SDL:
                 return {1073741906:"up",1073741905:"down",1073741904:"left",1073741903:"right",13:"done",32:"a",27:"cancel",8:"b",113:"quit"}.get(key,"none")
             if typ==0x651:
                 button=buf[12]
-                return {0:"a",1:"b",2:"cancel",6:"b",7:"done",11:"up",12:"down",13:"left",14:"right"}.get(button,"none")
+                return self.button_map.get(button,"none")
         return "quit"
 
 
@@ -224,31 +285,40 @@ class PixelCockpit:
         finally: self.ui.open()
 
     def env(self,p:Provider):
-        if p.auth=="token-env" and p.token_env:
+        if p.supports_auth("token-env") and p.token_env:
             token=self.secrets.get(p.id)
             if token: os.environ[p.token_env]=token
         for k,v in p.env.items(): os.environ.setdefault(k,v)
         os.environ["HANDAI_SKILLS"]=str(self.hub)
 
-    def login(self,p:Provider):
-        if p.auth=="none": self.toast(f"{p.label} NEEDS NO LOGIN")
-        elif p.auth=="oauth-device":
-            if p.login_command: self.interactive(p.login_command); self.status=f"RAN {p.label} LOGIN"
-            else: self.toast("NO LOGIN COMMAND CONFIGURED")
-        else:
-            token=self.prompt(f"{p.label} TOKEN",self.secrets.get(p.id) or "",True)
-            if token is None: return
-            if token: self.secrets.set(p.id,token); self.status=f"TOKEN STORED FOR {p.label}"
-            else: self.secrets.clear(p.id); self.status=f"TOKEN CLEARED FOR {p.label}"
+    def oauth_login(self,p:Provider,host:str|None=None):
+        if not p.login_command:self.toast("NO OAUTH LOGIN COMMAND CONFIGURED");return
+        argv=p.login_command if not host else remote.ssh_argv(host,shlex.join(p.login_command),tty=True)
+        self.interactive(argv);self.status=f"RAN {p.label} OAUTH"+(f" ON {host}" if host else "")
+
+    def api_login(self,p:Provider):
+        if not p.token_env:self.toast("NO ACCESS TOKEN VARIABLE CONFIGURED");return
+        token=self.prompt(f"{p.label} ACCESS TOKEN",self.secrets.get(p.id) or "",True)
+        if token is None:return
+        if token:self.secrets.set(p.id,token);self.status=f"ACCESS TOKEN STORED FOR {p.label}"
+        else:self.secrets.clear(p.id);self.status=f"ACCESS TOKEN CLEARED FOR {p.label}"
 
     def new_session(self):
         p=self.pick("NEW / PROVIDER",self.cfg.providers,lambda x:f"{x.label}  [{x.auth}]")
         if not p:return
-        if p.auth=="token-env" and not self.secrets.has(p.id):
-            self.toast("TOKEN REQUIRED - OPENING LOGIN"); self.login(p)
+        if p.supports_auth("token-env") and not p.supports_auth("oauth-device") and not self.secrets.has(p.id):
+            self.toast("ACCESS CREDENTIAL REQUIRED - OPENING ADVANCED LOGIN"); self.api_login(p)
             if not self.secrets.has(p.id):return
         m=self.pick("NEW / MODE",self.cfg.modes_for(p),lambda x:f"{x.label}  {x.host or 'DEVICE'}")
         if not m:return
+        if m.transport=="openclaw-gateway":
+            os.environ["OPENCLAW_GATEWAY_URL"]=m.endpoint or ""
+            gateway_token=self.secrets.get("gateway:"+m.id)
+            if gateway_token:os.environ["OPENCLAW_GATEWAY_TOKEN"]=gateway_token
+        elif m.transport=="hermes-api":
+            os.environ["HERMES_REMOTE_URL"]=m.endpoint or ""
+            remote_key=self.secrets.get("gateway:"+m.id)
+            if remote_key:os.environ["HERMES_REMOTE_API_KEY"]=remote_key
         choices=list(self.cfg.recent_workdirs)
         if m.default_workdir and m.default_workdir not in choices: choices.insert(0,m.default_workdir)
         choices.append("<ENTER PATH>"); wd=self.pick("NEW / WORKDIR",choices)
@@ -268,25 +338,53 @@ class PixelCockpit:
         elif act=="KILL SESSION":self.status=f"KILLED {s.name}" if tmux.kill(s) else f"KILL FAILED: {s.name}"
 
     def providers(self):
-        p=self.pick("PROVIDERS",self.cfg.providers,lambda x:f"{'+' if x.auth!='token-env' or self.secrets.has(x.id) else 'X'} {x.label} [{x.auth}]")
+        area=self.pick("PROVIDERS / LOGIN",["LOCAL PROVIDERS","REMOTE PROVIDERS"])
+        if area=="LOCAL PROVIDERS":
+            local=next((m for m in self.cfg.modes if not m.is_remote),None)
+            candidates=[p for p in self.cfg.providers if local and p.allows_mode(local.id)]
+            p=self.pick("LOCAL PROVIDERS",candidates,self.provider_label,subtitle="RUNS ON THIS HANDHELD")
+            if p:self.provider_login(p,None)
+        elif area=="REMOTE PROVIDERS":
+            remote_modes=[m for m in self.cfg.modes if m.is_remote]
+            candidates=[p for p in self.cfg.providers
+                        if any(m in self.cfg.modes_for(p) for m in remote_modes)]
+            p=self.pick("REMOTE PROVIDERS",candidates,
+                        lambda p:f"REMOTE {self.provider_label(p)}",
+                        subtitle="CHOOSE THE AGENT ON THE OTHER DEVICE")
+            if not p:return
+            modes=[m for m in remote_modes if m in self.cfg.modes_for(p)]
+            mode=self.pick(f"REMOTE {p.label}",modes,
+                           lambda m:f"{m.label} [{m.host}]",
+                           subtitle="CHOOSE THE DEVICE RUNNING THE AGENT")
+            if mode:self.provider_login(p,mode.host)
+
+    def provider_label(self,p):
+        ready=p.supports_auth("oauth-device") or self.secrets.has(p.id)
+        return f"{'+' if ready else 'X'} {p.label} [{' + '.join(p.auth_methods or [p.auth])}]"
+
+    def provider_login(self,p,host):
         if not p:return
-        if p.auth=="none": self.toast("NO AUTHENTICATION NEEDED");return
-        acts=["LOGIN"] if p.auth=="oauth-device" else ["ENTER TOKEN"]
-        if p.auth=="token-env" and self.secrets.has(p.id):
-            if any(m.is_remote for m in self.cfg.modes_for(p)):acts.append("PUSH TOKEN TO HOST")
-            acts.append("CLEAR TOKEN")
-        act=self.pick(p.label,acts)
-        if act in ("LOGIN","ENTER TOKEN"):self.login(p)
-        elif act=="CLEAR TOKEN":self.secrets.clear(p.id);self.status=f"TOKEN CLEARED FOR {p.label}"
-        elif act=="PUSH TOKEN TO HOST":
-            hosts=sorted({m.host for m in self.cfg.modes_for(p) if m.is_remote and m.host});host=self.pick("PUSH TOKEN",hosts)
-            if host:
-                self.draw_busy(f"PUSHING TO {host}");_,msg=remote.push_token(host,p.token_env or "",self.secrets.get(p.id) or "");self.status=msg;self.toast(msg)
+        if p.supports_auth("none"):self.toast("NO AUTHENTICATION NEEDED");return
+        acts=[]
+        if p.supports_auth("oauth-device"):
+            acts.append("OAUTH LOGIN ON DEVICE" if not host else "OAUTH LOGIN ON REMOTE")
+        if p.supports_auth("token-env"):
+            acts.append("ADVANCED: ENTER ACCESS TOKEN")
+            if self.secrets.has(p.id):
+                if host:acts.append("ADVANCED: SEND TOKEN TO REMOTE")
+                acts.append("ADVANCED: CLEAR ACCESS TOKEN")
+        act=self.pick(p.label,acts,subtitle=f"TARGET: {host or 'THIS HANDHELD'}")
+        if act=="OAUTH LOGIN ON DEVICE":self.oauth_login(p)
+        elif act=="OAUTH LOGIN ON REMOTE":self.oauth_login(p,host)
+        elif act=="ADVANCED: ENTER ACCESS TOKEN":self.api_login(p)
+        elif act=="ADVANCED: CLEAR ACCESS TOKEN":self.secrets.clear(p.id);self.status=f"ACCESS TOKEN CLEARED FOR {p.label}"
+        elif act=="ADVANCED: SEND TOKEN TO REMOTE" and host:
+            self.draw_busy(f"PUSHING TO {host}");_,msg=remote.push_token(host,p.token_env or "",self.secrets.get(p.id) or "");self.status=msg;self.toast(msg)
 
     def network(self):
-        if not network.available():self.toast("WIFI CONTROL UNAVAILABLE - NO WPA_CLI");return
-        act=self.pick("NETWORK",["SCAN AND CONNECT","SAVED NETWORKS","STATUS"],subtitle=network.status())
-        if act=="STATUS":self.toast(network.status())
+        act=self.pick("NETWORK",["SCAN AND CONNECT","SAVED NETWORKS","WIFI STATUS","TAILSCALE"],subtitle=network.status())
+        if act in ("SCAN AND CONNECT","SAVED NETWORKS","WIFI STATUS") and not network.available():self.toast("WIFI CONTROL UNAVAILABLE - NO WPA_CLI");return
+        if act=="WIFI STATUS":self.toast(network.status())
         elif act=="SCAN AND CONNECT":
             self.draw_busy("SCANNING WIFI"); nets=network.scan(); n=self.pick("WIFI NETWORKS",nets,lambda x:f"{'*' if x.secured else ' '} {x.ssid} {x.signal} DBM")
             if not n:return
@@ -299,6 +397,48 @@ class PixelCockpit:
             sub=self.pick(ssid,["RECONNECT","FORGET"])
             if sub=="RECONNECT":self.draw_busy(f"RECONNECTING {ssid}");self.toast("CONNECTED" if network.reconnect(ssid) else "RECONNECT FAILED")
             elif sub=="FORGET":self.toast(f"FORGOT {ssid}" if network.forget(ssid) else "FORGET FAILED")
+        elif act=="TAILSCALE":self.tailscale_screen()
+
+    def tailscale_screen(self):
+        state=tailscale.status()
+        if not state.available:self.toast("TAILSCALE CLI IS NOT INSTALLED");return
+        detail=f"{state.state.upper()}  {' '.join(state.ips) or 'NO IP'}"
+        acts=["SHOW STATUS","LOGIN WITH PHONE"]
+        if state.online:acts.append("LOGOUT")
+        act=self.pick("TAILSCALE",acts,subtitle=detail)
+        if act=="SHOW STATUS":self.toast("TAILSCALE STATUS",[f"STATE: {state.state}",f"NAME: {state.name or '-'}",f"IPS: {' '.join(state.ips) or '-'}"])
+        elif act=="LOGIN WITH PHONE":
+            self.draw_busy("REQUESTING LOGIN QR");ok,value=tailscale.login_url()
+            if not ok:self.toast(value);return
+            if value=="already-online":self.toast("TAILSCALE IS ALREADY ONLINE");return
+            self.show_qr("TAILSCALE LOGIN",value,"SCAN WITH PHONE - LOGIN - THEN PRESS B")
+            fresh=tailscale.status();self.status=f"TAILSCALE: {fresh.state.upper()}"
+        elif act=="LOGOUT" and self.pick("TAILSCALE LOGOUT",["YES LOGOUT","CANCEL"])=="YES LOGOUT":
+            ok,msg=tailscale.logout();self.status="TAILSCALE LOGGED OUT" if ok else msg;self.toast(self.status)
+
+    def show_qr(self,title,value,hint):
+        try:matrix=phone.qr_matrix(value)
+        except RuntimeError as e:self.toast(str(e),[value]);return
+        self.chrome(title,value[:78]);size=len(matrix);scale=max(1,min(8,310//size));span=size*scale;x=(640-span)//2;y=104
+        self.ui.rect(x-8,y-8,span+16,span+16,(255,255,255))
+        for row,bits in enumerate(matrix):
+            for col,on in enumerate(bits):
+                if on:self.ui.rect(x+col*scale,y+row*scale,scale,scale,(0,0,0))
+        self.footer(hint);self.ui.present()
+        while self.ui.event() not in ("a","b","done","cancel","quit"):pass
+
+    def phone_keyboard(self):
+        self.draw_busy("SCANNING SESSIONS");sessions=tmux.list_all(self.cfg.modes)
+        session=self.pick("PHONE KEYBOARD",sessions,lambda x:f"{x.name} [{x.host or 'DEVICE'}]")
+        if not session:return
+        ts=tailscale.status();host=phone.safe_ip(ts.ips) if ts.online else None
+        host=host or phone.local_ip()
+        if host=="127.0.0.1":self.toast("NO LAN OR TAILSCALE IP FOUND");return
+        bridge=phone.PhoneKeyboard(session,host).start()
+        try:
+            self.show_qr("PAIR PHONE KEYBOARD",bridge.url,"SCAN QR - TYPE ON PHONE - B STOPS SHARING")
+        finally:bridge.stop()
+        self.status="PHONE KEYBOARD STOPPED"
 
     def sync_local(self,quiet=False):
         results=[]
@@ -309,16 +449,10 @@ class PixelCockpit:
 
     def skill_screen(self):
         installed=skills.list_installed(self.hub)
-        act=self.pick("SKILLS",["INSTALL FROM INTERNET",f"INSTALLED SKILLS ({len(installed)})","SYNC TO TOOLS LOCAL","SYNC TO REMOTE HOSTS"])
-        if act=="INSTALL FROM INTERNET":
-            spec=self.prompt("SKILL SOURCE")
-            if not spec:return
-            try:src=skills.parse_source(spec)
-            except ValueError as e:self.toast(str(e));return
-            if self.pick(f"INSTALL {src.name}",["YES DOWNLOAD","CANCEL"])!="YES DOWNLOAD":return
-            self.draw_busy(f"INSTALLING {src.name}")
-            try:sk=skills.install(self.hub,spec);self.sync_local(True);self.toast(f"INSTALLED {sk.name} AND SYNCED")
-            except (ValueError,OSError) as e:self.toast(f"INSTALL FAILED: {e}")
+        act=self.pick("SKILLS",["TOP / MOST DOWNLOADED","TRENDING SKILLS","HOT RIGHT NOW","ENTER SOURCE MANUALLY",f"INSTALLED SKILLS ({len(installed)})","SYNC TO TOOLS LOCAL","SYNC TO REMOTE HOSTS"])
+        views={"TOP / MOST DOWNLOADED":"all-time","TRENDING SKILLS":"trending","HOT RIGHT NOW":"hot"}
+        if act in views:self.browse_skills(views[act])
+        elif act=="ENTER SOURCE MANUALLY":self.install_skill_manual()
         elif act and act.startswith("INSTALLED"):
             sk=self.pick("INSTALLED SKILLS",installed,lambda x:f"{x.name} - {x.description}")
             if sk and self.pick(sk.name,["REMOVE","CANCEL"])=="REMOVE":self.toast(f"REMOVED {sk.name}" if skills.remove(self.hub,sk.name) else "REMOVE FAILED")
@@ -333,21 +467,177 @@ class PixelCockpit:
                     for label,path in targets[host]:lok,_=remote.link_remote(host,path);lines.append(f" {'+' if lok else 'X'} {label}")
             self.toast("REMOTE SKILL SYNC",lines)
 
+    def install_skill_manual(self):
+        spec=self.prompt("SKILL SOURCE")
+        if not spec:return
+        try:src=skills.parse_source(spec)
+        except ValueError as e:self.toast(str(e));return
+        if self.pick(f"INSTALL {src.name}",["YES DOWNLOAD","CANCEL"])!="YES DOWNLOAD":return
+        self.draw_busy(f"INSTALLING {src.name}")
+        try:sk=skills.install(self.hub,spec);self.sync_local(True);self.toast(f"INSTALLED {sk.name} AND SYNCED")
+        except (ValueError,OSError) as e:self.toast(f"INSTALL FAILED: {e}")
+
+    def browse_skills(self,view):
+        page=0
+        while True:
+            self.draw_busy("LOADING SKILLS.SH")
+            try:rows=skill_catalog.fetch(view,page)
+            except (OSError,ValueError) as e:self.toast(f"CATALOG UNAVAILABLE: {e}");return
+            choices=[*rows,"NEXT PAGE"]
+            chosen=self.pick("SKILLS.SH",choices,lambda x:x if isinstance(x,str) else f"#{x.rank+page*30} {x.name} [{x.installs}]",subtitle=f"{view.upper()} - COMMUNITY CONTENT")
+            if chosen is None:return
+            if chosen=="NEXT PAGE":page+=1;continue
+            warning=[f"SOURCE: {chosen.source}",f"INSTALLS: {chosen.installs}","COMMUNITY SKILLS CAN CONTAIN UNSAFE INSTRUCTIONS.","REVIEW THE FILES AFTER INSTALLING."]
+            if self.pick(f"INSTALL {chosen.name}",["YES INSTALL","CANCEL"],subtitle=f"{chosen.source} / {chosen.installs}")!="YES INSTALL":continue
+            self.draw_busy(f"INSTALLING {chosen.name}")
+            try:
+                sk=skills.install_catalog(self.hub,chosen.install_url,chosen.slug)
+                self.sync_local(True);self.toast(f"INSTALLED {sk.name} AND SYNCED",warning[:2])
+            except (ValueError,OSError) as e:self.toast(f"INSTALL FAILED: {e}")
+            return
+
     def settings(self):
-        self.toast("SYSTEM STATUS",[f"CONFIG: {config_path()}",f"STATE: {self.secrets.path}",network.status(),f"PROVIDERS: {len(self.cfg.providers)}  MODES: {len(self.cfg.modes)}","GUI: SDL2 PIXEL / 640X480"])
+        act=self.pick("SETTINGS",["REMOTE DEVICES","SYSTEM DIAGNOSTICS","SECURE CREDENTIALS WITH PIN","GAMEPAD CALIBRATION","RUN SETUP WIZARD","CHOOSE PIXEL SKIN","SYSTEM STATUS"],subtitle=f"ACTIVE SKIN: {self.ui.theme.label}")
+        if act=="REMOTE DEVICES": self.remote_devices()
+        elif act=="SYSTEM DIAGNOSTICS":
+            ok,lines=diagnostics.summary();self.toast("ALL CHECKS PASSED" if ok else "HARDWARE CHECKS NEED ATTENTION",lines)
+        elif act=="SECURE CREDENTIALS WITH PIN":self.secure_credentials()
+        elif act=="GAMEPAD CALIBRATION": self.gamepad_calibration()
+        elif act=="RUN SETUP WIZARD": self.first_run(force=True)
+        elif act=="CHOOSE PIXEL SKIN": self.choose_skin()
+        elif act=="SYSTEM STATUS":
+            self.toast("SYSTEM STATUS",[f"CONFIG: {config_path()}",f"STATE: {self.secrets.path}",network.status(),f"PROVIDERS: {len(self.cfg.providers)}  MODES: {len(self.cfg.modes)}",f"SKIN: {self.ui.theme.label}","GUI: SDL2 PIXEL / 640X480"])
+
+    def secure_credentials(self):
+        pin=self.prompt("NEW BOOT PIN","",True)
+        if pin is None:return
+        again=self.prompt("REPEAT BOOT PIN","",True)
+        if pin!=again:self.toast("PINS DO NOT MATCH");return
+        try:self.secrets.enable_pin(pin);self.status="CREDENTIAL STORE ENCRYPTED"
+        except ValueError as e:self.toast(str(e))
+
+    def unlock_credentials(self):
+        while self.secrets.locked:
+            pin=self.prompt("UNLOCK CREDENTIALS","",True)
+            if pin is None:self.toast("CREDENTIALS STAY LOCKED");return
+            if self.secrets.unlock(pin):self.status="CREDENTIALS UNLOCKED";return
+            self.toast("WRONG PIN")
+
+    def gamepad_calibration(self):
+        choice=self.pick("GAMEPAD",["USE STANDARD SDL MAPPING","INFO"],subtitle="CUSTOM HARDWARE MAPS CAN USE SDL_GAMECONTROLLERCONFIG")
+        if choice=="USE STANDARD SDL MAPPING":
+            preferences.save_button_map(preferences.DEFAULT_BUTTONS);self.ui.button_map=preferences.button_map();self.status="STANDARD GAMEPAD MAP RESTORED"
+        elif choice=="INFO":self.toast("RG35XXSP BUTTONS USE SDL STANDARD LAYOUT",["A SELECTS, B GOES BACK, START CONFIRMS.","SET SDL_GAMECONTROLLERCONFIG FOR CUSTOM FIRMWARE MAPS."])
+
+    def first_run(self,force=False):
+        if not force and preferences.completed():return
+        start=self.pick("WELCOME TO HANDAI",["START GUIDED SETUP","SKIP FOR NOW"],subtitle="WIFI - TAILSCALE - REMOTE COMPUTER - AI LOGIN")
+        if start!="START GUIDED SETUP":return
+        if self.pick("STEP 1 / NETWORK",["OPEN WIFI SETUP","SKIP"])=="OPEN WIFI SETUP":self.network()
+        if self.pick("STEP 2 / TAILSCALE",["LOGIN WITH PHONE","SKIP"])=="LOGIN WITH PHONE":self.tailscale_screen()
+        if self.pick("STEP 3 / REMOTE",["ADD COMPUTER OR GATEWAY","SKIP"])=="ADD COMPUTER OR GATEWAY":self.remote_devices()
+        if self.pick("STEP 4 / AI ACCOUNT",["OPEN PROVIDER LOGIN","SKIP"])=="OPEN PROVIDER LOGIN":self.providers()
+        preferences.mark_completed();self.status="SETUP COMPLETE"
+        self.toast("HANDAI IS READY",["START A SESSION, THEN PAIR PHONE KEYBOARD FROM HOME."])
+
+    def remote_devices(self):
+        while True:
+            saved=devices.load()
+            choices=["ADD SSH DEVICE","ADD OPENCLAW GATEWAY","ADD HERMES SERVER",*saved]
+            item=self.pick("REMOTE DEVICES",choices,
+                           lambda x:x if isinstance(x,str) else f"{x.label} [{x.address}]",
+                           subtitle="SSH COMPUTERS AND OPENCLAW GATEWAYS")
+            if item is None:return
+            if item=="ADD SSH DEVICE":
+                label=self.prompt("DEVICE NAME")
+                if not label:continue
+                address=self.prompt("SSH USER@HOST")
+                if not address:continue
+                try:address=devices.validate_ssh_host(address)
+                except ValueError as e:self.toast(str(e));continue
+                wd=self.prompt("DEFAULT WORKDIR","~/projects") or "~/projects"
+                dev=devices.RemoteDevice(devices.slug(label),label,"ssh",address,wd)
+                devices.upsert(dev);self.cfg.reload_devices();self.setup_ssh(dev)
+            elif item=="ADD OPENCLAW GATEWAY":
+                label=self.prompt("GATEWAY NAME")
+                if not label:continue
+                address=self.prompt("WS OR WSS URL","ws://100.")
+                if not address:continue
+                try:address=devices.validate_gateway_url(address)
+                except ValueError as e:self.toast(str(e));continue
+                dev=devices.RemoteDevice(devices.slug(label),label,"openclaw-gateway",address,"~")
+                devices.upsert(dev);self.cfg.reload_devices()
+                token=self.prompt("GATEWAY TOKEN","",True)
+                if token:self.secrets.set("gateway:managed-"+dev.id,token)
+                self.status=f"ADDED OPENCLAW GATEWAY {label}"
+            elif item=="ADD HERMES SERVER":
+                label=self.prompt("HERMES SERVER NAME")
+                if not label:continue
+                address=self.prompt("HTTP OR HTTPS URL","http://100.")
+                if not address:continue
+                try:address=devices.validate_hermes_url(address)
+                except ValueError as e:self.toast(str(e));continue
+                dev=devices.RemoteDevice(devices.slug(label),label,"hermes-api",address,"~")
+                devices.upsert(dev);self.cfg.reload_devices()
+                token=self.prompt("HERMES API ACCESS TOKEN","",True)
+                if token:self.secrets.set("gateway:managed-"+dev.id,token)
+                self.status=f"ADDED HERMES SERVER {label}"
+            else:
+                action=self.pick(item.label,["TEST CONNECTION","PAIR SSH KEY","CHANGE GATEWAY TOKEN","REMOVE DEVICE"])
+                if action=="TEST CONNECTION":
+                    if item.kind=="ssh":
+                        self.draw_busy("TESTING SSH");ok,msg=remote.diagnose(item.address);self.toast(("READY: " if ok else "NOT READY: ")+msg)
+                    else:self.test_gateway(item)
+                elif action=="PAIR SSH KEY" and item.kind=="ssh":self.setup_ssh(item)
+                elif action=="CHANGE GATEWAY TOKEN" and item.kind in ("openclaw-gateway","hermes-api"):
+                    token=self.prompt("GATEWAY TOKEN",self.secrets.get("gateway:managed-"+item.id) or "",True)
+                    if token is not None:self.secrets.set("gateway:managed-"+item.id,token) if token else self.secrets.clear("gateway:managed-"+item.id)
+                elif action=="REMOVE DEVICE":
+                    devices.remove(item.id);self.secrets.clear("gateway:managed-"+item.id);self.cfg.reload_devices();self.status=f"REMOVED {item.label}"
+
+    def setup_ssh(self,item):
+        ok,value=remote.ensure_key()
+        if not ok:self.toast("SSH KEY CREATION FAILED",[value]);return
+        self.interactive(remote.pair_command(item.address,value))
+        ok,msg=remote.diagnose(item.address);self.toast(("READY: " if ok else "PAIRING INCOMPLETE: ")+msg)
+
+    def test_gateway(self,item):
+        token=self.secrets.get("gateway:managed-"+item.id)
+        env=os.environ.copy()
+        if item.kind=="openclaw-gateway":
+            argv=["openclaw","gateway","health","--json"]
+            env["OPENCLAW_GATEWAY_URL"]=item.address
+            if token:env["OPENCLAW_GATEWAY_TOKEN"]=token
+        else:
+            argv=[os.environ.get("PYTHON","python"),"-c",
+                  "import os;from handai.hermes_remote import HermesRemote;print(HermesRemote(os.environ['HERMES_REMOTE_URL'],os.environ['HERMES_REMOTE_API_KEY']).request('/v1/capabilities'))"]
+            env["HERMES_REMOTE_URL"]=item.address;env["HERMES_REMOTE_API_KEY"]=token or ""
+        self.draw_busy("TESTING GATEWAY")
+        try:r=subprocess.run(argv,capture_output=True,text=True,timeout=15,env=env)
+        except (OSError,subprocess.TimeoutExpired) as e:self.toast(f"GATEWAY TEST FAILED: {e}");return
+        self.toast("GATEWAY READY" if r.returncode==0 else "GATEWAY UNREACHABLE",[(r.stderr or r.stdout).strip()[:180]])
+
+    def choose_skin(self):
+        chosen=self.pick("PIXEL SKINS",THEMES,lambda t:f"{'*' if t.id==self.ui.theme.id else ' '} {t.label}",subtitle="10 COLOR THEMES - SAVED AUTOMATICALLY")
+        if not chosen:return
+        self.ui.apply_theme(chosen)
+        try:save_theme(chosen);self.status=f"SKIN CHANGED: {chosen.label}"
+        except OSError as e:self.status=f"SKIN SAVE FAILED: {e}"
 
     def draw_busy(self,msg):
         self.chrome("WORKING");self.ui.frame(80,165,480,100,self.ui.PINK,4);self.ui.text(110,207,msg,self.ui.YELLOW,2,max_chars=35);self.footer("PLEASE WAIT");self.ui.present()
 
     def run(self):
-        menu=[("NEW SESSION",self.new_session),("ACTIVE SESSIONS",self.sessions),("PROVIDERS / LOGIN",self.providers),("SKILLS HUB",self.skill_screen),("NETWORK",self.network),("INSTALL LOCAL AGENTS",self.install_agents),("SETTINGS",self.settings),("QUIT",None)]
+        self.unlock_credentials()
+        self.first_run()
+        menu=[("NEW SESSION",self.new_session),("ACTIVE SESSIONS",self.sessions),("PROVIDERS / LOGIN",self.providers),("SKILLS HUB",self.skill_screen),("NETWORK",self.network),("PHONE KEYBOARD",self.phone_keyboard),("INSTALL LOCAL AGENTS",self.install_agents),("SETTINGS",self.settings),("QUIT",None)]
         idx=0
         while True:
             self.chrome("HOME",self.status)
             for i,(label,_) in enumerate(menu):
-                col=i%2;row=i//2;x=20+col*305;y=100+row*78;sel=i==idx
-                self.ui.rect(x,y,295,62,self.ui.PANEL2 if sel else self.ui.PANEL);self.ui.frame(x,y,295,62,self.ui.CYAN if sel else self.ui.PANEL2,3)
-                self.ui.text(x+18,y+24,label,self.ui.YELLOW if sel else self.ui.INK,2,max_chars=21)
+                col=i%2;row=i//2;x=20+col*305;y=94+row*67;sel=i==idx
+                self.ui.rect(x,y,295,54,self.ui.PANEL2 if sel else self.ui.PANEL);self.ui.frame(x,y,295,54,self.ui.CYAN if sel else self.ui.PANEL2,3)
+                self.ui.text(x+18,y+20,label,self.ui.YELLOW if sel else self.ui.INK,2,max_chars=21)
             self.footer("D-PAD MOVE   A SELECT   B / Q QUIT");self.ui.present();e=self.ui.event()
             if e=="left":idx=(idx-1)%len(menu)
             elif e=="right":idx=(idx+1)%len(menu)

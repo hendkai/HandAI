@@ -11,8 +11,22 @@ verlinkt — installiert = überall sichtbar.
 - Beim Start jeder Agent-Sitzung exportiert das Cockpit `HANDAI_SKILLS=<hub>`, damit
   Tools/MCP den Ort auch per Env finden.
 
-## Aus dem Internet installieren (Cockpit → *Skills* → *Install from internet*)
-Unterstützte Quellen (per On-Screen-Keyboard eingegeben):
+## Ohne Tastatur im Katalog stöbern
+
+Im Pixel-Cockpit stehen direkt unter **Skills** drei per d-pad bedienbare Listen:
+
+- **Top / Most downloaded** — All-Time-Rangliste
+- **Trending skills** — Wachstum der letzten 24 Stunden
+- **Hot right now** — aktuell stark steigende Installationen
+
+Die Listen stammen von der öffentlichen [skills.sh](https://skills.sh)-Rangliste
+und werden zehn Minuten unter `$HANDAI_STATE/catalog` gecacht. Jede Zeile zeigt
+Rang, Name und Installationszahl. Nach Auswahl werden Quelle und Community-Warnung
+angezeigt; erst eine zweite A-Bestätigung lädt den gewählten Skill-Unterordner.
+Damit sind Suche, Auswahl und Installation vollständig ohne Buchstabeneingabe möglich.
+
+## Quelle manuell eingeben (Cockpit → *Skills* → *Enter source manually*)
+Unterstützte Quellen:
 | Eingabe | wird zu |
 |---|---|
 | `owner/repo` | GitHub-Repo (git clone, flach) |

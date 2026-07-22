@@ -4,8 +4,6 @@
 # devbox/cloud there. Needs network. Invoked from the cockpit ("Install local
 # agents") or over ssh.
 #
-# NOTE: the package names below are best-effort. Adjust to the real published
-# names for each CLI once you've confirmed them.
 set -u
 
 if ! command -v npm >/dev/null 2>&1; then
@@ -19,9 +17,29 @@ if npm install -g \
 	@anthropic-ai/claude-code \
 	@openai/codex \
 	opencode-ai ; then
+	# OpenClaw requires Node 22.19+ (Node 24 recommended). Keep the other
+	# agents usable when the image still bundles an older Node release.
+	if node -e 'v=process.versions.node.split(".").map(Number);process.exit(v[0]>22||(v[0]===22&&v[1]>=19)?0:1)' ; then
+		npm install -g openclaw@latest || echo "Warning: OpenClaw install failed; remote use remains available." >&2
+	else
+		echo "Skipping local OpenClaw: Node 22.19+ is required; remote use remains available."
+	fi
+	if ! command -v hermes >/dev/null 2>&1; then
+		echo "Installing Hermes Agent from the official installer..."
+		hermes_installer=/tmp/hermes-install.$$.sh
+		if curl --fail --silent --show-error --location \
+			https://hermes-agent.nousresearch.com/install.sh -o "$hermes_installer"; then
+			bash "$hermes_installer" --skip-setup --skip-browser || \
+				echo "Warning: Hermes install failed; use Hermes on a remote computer." >&2
+			rm -f "$hermes_installer"
+		else
+			echo "Warning: could not download the official Hermes installer." >&2
+			rm -f "$hermes_installer"
+		fi
+	fi
 	echo
 	echo "Installed. Found on PATH:"
-	for c in claude codex opencode; do
+	for c in claude codex opencode openclaw hermes; do
 		p=$(command -v "$c" 2>/dev/null) && echo "  $c -> $p"
 	done
 	echo "Now log in per provider from the cockpit (Providers / Login)."

@@ -100,6 +100,10 @@ Ebene 3.
 |---|---|---|
 | `make test` | 1 | Kernlogik, Regressionen |
 | `make demo` | 1 | Cockpit-Flow offline (Fake-Provider) |
+
+`python -m pytest -q` umfasst zusätzlich lokale Integrationstests: einen simulierten,
+authentifizierten Hermes-Sessions-Server sowie den vollständigen einmaligen
+QR → Cookie → CSRF-POST-Fluss der Handy-Tastatur. Dafür werden keine Internetkonten benötigt.
 | `scripts/qemu-smoke.sh` | 2 | Boot→Cockpit headless, Marker-Assertion |
 | `run-qemu.sh` | 2 | Boot→Cockpit interaktiv, Init, Paket-Layout, ARM |
 | Flashen | 3 | SoC: Display, Gamepad, WLAN, Bootchain |

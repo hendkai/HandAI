@@ -11,9 +11,11 @@ from __future__ import annotations
 
 import re
 import shlex
+import sys
 from dataclasses import dataclass
 
 from .providers import Mode, Provider
+from .remote import ssh_argv
 
 
 def _slug(text: str) -> str:
@@ -38,7 +40,7 @@ class Target:
 
     @property
     def display(self) -> str:
-        where = self.mode.host or "on-device" if self.mode.is_remote else "on-device"
+        where = self.mode.host or self.mode.endpoint or "on-device"
         return f"{self.provider.label} - {self.mode.label} ({where}) - {self.workdir}"
 
 
@@ -68,7 +70,11 @@ def _tmux_inner(
     If source_env, pull in ~/.handai_env first (remote token-env provisioning,
     see remote.push_token) so the credential never rides on the command line.
     """
-    agent = " ".join(shlex.quote(a) for a in [*provider.command, *extra_args])
+    command=provider.command
+    if provider.id=="hermes" and extra_args[:1]==["__handai_hermes_remote__"]:
+        command=[sys.executable,"-m","handai.hermes_remote"]
+        extra_args=extra_args[1:]
+    agent = " ".join(shlex.quote(a) for a in [*command, *extra_args])
     cd = _cd_expr(workdir)
     prelude = "[ -f ~/.handai_env ] && . ~/.handai_env; " if source_env else ""
     # keep the shell alive on agent exit so a crash/logout doesn't nuke the pane
@@ -88,10 +94,11 @@ def build_target(
     workdir = workdir or mode.default_workdir or "."
     name = session_name(provider, mode, workdir)
     # remote + token-env -> source the provisioned env file inside the session
-    source_env = mode.is_remote and provider.auth == "token-env"
+    source_env = mode.is_ssh and provider.supports_auth("token-env")
+    if mode.transport=="hermes-api":extra_args=["__handai_hermes_remote__","--url",mode.endpoint or ""]
     inner = _tmux_inner(provider, workdir, extra_args, source_env)
 
-    if mode.is_remote:
+    if mode.is_ssh:
         assert mode.host
         # Run tmux on the *remote* host over an interactive ssh (-t).
         # The remote tmux server keeps the agent alive after you detach.
@@ -99,7 +106,7 @@ def build_target(
         # host would need its own handai install to serve the popup.)
         tmux = ["tmux", "new-session", "-A", "-s", name, inner]
         remote_cmd = " ".join(shlex.quote(a) for a in tmux)
-        argv = ["ssh", "-t", mode.host, remote_cmd]
+        argv = ssh_argv(mode.host,remote_cmd,tty=True)
     else:
         # Local: load our tmux.conf if configured, so the gamepad "compose"
         # keybinding (popup -> OSK -> send-keys) is active in the session.

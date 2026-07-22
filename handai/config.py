@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 
 from .providers import Mode, Provider, parse_modes, parse_providers
+from . import devices
 
 
 def _expand(obj):
@@ -52,15 +53,37 @@ class Config:
         return next((m for m in self.modes if m.id == mid), None)
 
     def modes_for(self, provider: Provider) -> list[Mode]:
-        return [m for m in self.modes if provider.allows_mode(m.id)]
+        static_ssh = any(m.transport == "ssh" and not m.id.startswith("managed-")
+                         and provider.allows_mode(m.id) for m in self.modes)
+        return [m for m in self.modes if provider.allows_mode(m.id)
+                or (m.transport == "ssh" and m.id.startswith("managed-") and static_ssh)
+                or (m.transport == "openclaw-gateway" and provider.id == "openclaw")
+                or (m.transport == "hermes-api" and provider.id == "hermes")]
+
+    def reload_devices(self, path: Path | None = None) -> None:
+        self.modes = [m for m in self.modes if not m.id.startswith("managed-")]
+        for item in devices.load(path):
+            if item.kind == "ssh":
+                self.modes.append(Mode("managed-" + item.id, item.label, "ssh",
+                                       host=item.address, default_workdir=item.default_workdir))
+            elif item.kind == "openclaw-gateway":
+                self.modes.append(Mode("managed-" + item.id, item.label,
+                                       "openclaw-gateway", endpoint=item.address,
+                                       default_workdir=item.default_workdir))
+            else:
+                self.modes.append(Mode("managed-" + item.id, item.label,
+                                       "hermes-api", endpoint=item.address,
+                                       default_workdir=item.default_workdir))
 
     @classmethod
     def load(cls, path: Path | None = None) -> "Config":
         path = path or config_path()
         raw = _expand(json.loads(Path(path).read_text("utf-8")))
-        return cls(
+        cfg = cls(
             providers=parse_providers(raw.get("providers", [])),
             modes=parse_modes(raw.get("modes", [])),
             recent=list(raw.get("recent_workdirs", [])),
             skills=dict(raw.get("skills", {})),
         )
+        cfg.reload_devices()
+        return cfg
