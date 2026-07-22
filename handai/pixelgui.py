@@ -201,6 +201,18 @@ class SDL:
                 return self.button_map.get(button,"none")
         return "quit"
 
+    def raw_button(self)->int|None:
+        """Wait for one controller button; Escape cancels calibration."""
+        buf=(ctypes.c_uint8*64)()
+        while self.s.SDL_WaitEvent(ctypes.byref(buf)):
+            typ=int.from_bytes(bytes(buf[0:4]),"little")
+            if typ==0x651:return int(buf[12])
+            if typ==0x100:return None
+            if typ==0x300:
+                key=int.from_bytes(bytes(buf[20:24]),"little",signed=True)
+                if key==27:return None
+        return None
+
 
 class PixelCockpit:
     def __init__(self,cfg:Config,secrets:SecretStore,ui:SDL):
@@ -524,8 +536,19 @@ class PixelCockpit:
             self.toast("WRONG PIN")
 
     def gamepad_calibration(self):
-        choice=self.pick("GAMEPAD",["USE STANDARD SDL MAPPING","INFO"],subtitle="CUSTOM HARDWARE MAPS CAN USE SDL_GAMECONTROLLERCONFIG")
-        if choice=="USE STANDARD SDL MAPPING":
+        choice=self.pick("GAMEPAD",["CALIBRATE ALL BUTTONS","USE STANDARD SDL MAPPING","INFO"],subtitle="MAP THE PHYSICAL HANDHELD CONTROLS")
+        if choice=="CALIBRATE ALL BUTTONS":
+            if not self.ui.pad:self.toast("NO SDL GAME CONTROLLER DETECTED");return
+            mapping={}
+            for action,label in (("a","SELECT / A"),("b","BACK / B"),("done","START / DONE"),("cancel","MENU / CANCEL"),("up","D-PAD UP"),("down","D-PAD DOWN"),("left","D-PAD LEFT"),("right","D-PAD RIGHT")):
+                self.chrome("GAMEPAD CALIBRATION",f"PRESS {label} - ESC CANCELS")
+                self.ui.frame(60,150,520,130,self.ui.CYAN,4);self.ui.text(105,205,f"PRESS {label}",self.ui.YELLOW,2,max_chars=35)
+                self.footer("PRESS THE REQUESTED PHYSICAL BUTTON");self.ui.present()
+                button=self.ui.raw_button()
+                if button is None:self.toast("CALIBRATION CANCELLED");return
+                mapping[button]=action
+            preferences.save_button_map(mapping);self.ui.button_map=mapping;self.status="GAMEPAD CALIBRATION SAVED"
+        elif choice=="USE STANDARD SDL MAPPING":
             preferences.save_button_map(preferences.DEFAULT_BUTTONS);self.ui.button_map=preferences.button_map();self.status="STANDARD GAMEPAD MAP RESTORED"
         elif choice=="INFO":self.toast("RG35XXSP BUTTONS USE SDL STANDARD LAYOUT",["A SELECTS, B GOES BACK, START CONFIRMS.","SET SDL_GAMECONTROLLERCONFIG FOR CUSTOM FIRMWARE MAPS."])
 
