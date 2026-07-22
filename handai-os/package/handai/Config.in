@@ -1,0 +1,14 @@
+config BR2_PACKAGE_HANDAI
+	bool "handai"
+	select BR2_PACKAGE_PYTHON3
+	select BR2_PACKAGE_PYTHON3_CURSES  # cockpit UI — without it `import curses` fails
+	select BR2_PACKAGE_TMUX
+	select BR2_PACKAGE_OPENSSH
+	select BR2_PACKAGE_CA_CERTIFICATES
+	help
+	  HandAI cockpit — gamepad-driven controller for local/remote AI coding
+	  agents. Installs the stdlib-only Python package to /opt/handai and the
+	  launcher to /usr/bin/handai. The init service boots the device straight
+	  into the cockpit.
+
+	  https://github.com/<you>/handai

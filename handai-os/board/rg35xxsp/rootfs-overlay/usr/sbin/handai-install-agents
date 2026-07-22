@@ -1,0 +1,31 @@
+#!/bin/sh
+# Install the LOCAL agent CLIs on a full (Node-enabled) image. On a remote-first
+# image there is no npm and this reports that cleanly — the agents live on your
+# devbox/cloud there. Needs network. Invoked from the cockpit ("Install local
+# agents") or over ssh.
+#
+# NOTE: the package names below are best-effort. Adjust to the real published
+# names for each CLI once you've confirmed them.
+set -u
+
+if ! command -v npm >/dev/null 2>&1; then
+	echo "npm is not installed — this is a remote-first image."
+	echo "Local agent CLIs aren't used here; run agents on your devbox/cloud instead."
+	exit 1
+fi
+
+echo "Installing local agent CLIs via npm (requires network)…"
+if npm install -g \
+	@anthropic-ai/claude-code \
+	@openai/codex \
+	opencode-ai ; then
+	echo
+	echo "Installed. Found on PATH:"
+	for c in claude codex opencode; do
+		p=$(command -v "$c" 2>/dev/null) && echo "  $c -> $p"
+	done
+	echo "Now log in per provider from the cockpit (Providers / Login)."
+else
+	echo "npm install failed — check network and package names." >&2
+	exit 1
+fi

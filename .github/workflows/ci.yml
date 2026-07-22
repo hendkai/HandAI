@@ -1,0 +1,64 @@
+name: CI
+
+# Level 1 (fast): core logic + config + shell lint on every push/PR.
+# Runs on GitHub-hosted Ubuntu — nothing here needs the handheld or QEMU.
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Byte-compile (syntax gate)
+        run: python -m py_compile handai/*.py tests/*.py
+
+      - name: Unit tests
+        run: python -m unittest discover -s tests -v
+
+      - name: Validate example config
+        env:
+          HANDAI_CONFIG: config/handai.example.json
+          HANDAI_CLOUD_HOST: cloud@sandbox
+        run: python -m handai --check
+
+      - name: Validate offline dev config
+        env:
+          HANDAI_CONFIG: dev/handai.dev.json
+          HANDAI_DEV: ${{ github.workspace }}/dev
+        run: python -m handai --check
+
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - name: Lint shell scripts
+        run: |
+          shellcheck --shell=sh \
+            bin/handai \
+            dev/fake/agent.sh \
+            scripts/wifi-preflight.sh \
+            handai-os/board/rg35xxsp/rootfs-overlay/etc/init.d/S99handai \
+            handai-os/board/rg35xxsp/rootfs-overlay/opt/handai/net/up.sh \
+            handai-os/board/rg35xxsp/rootfs-overlay/opt/handai/net/chip.sh.example \
+            handai-os/board/qemu/rootfs-overlay/usr/share/handai/fake-agent.sh
+          shellcheck --shell=sh \
+            handai-os/board/post-build.sh \
+            handai-os/board/rg35xxsp/rootfs-overlay/usr/sbin/handai-install-agents
+          shellcheck --shell=bash \
+            handai-os/board/rg35xxsp/post-image.sh \
+            handai-os/board/qemu/run-qemu.sh \
+            scripts/build-qemu.sh \
+            scripts/build-image.sh \
+            scripts/flash.sh \
+            scripts/install-build-deps.sh \
+            scripts/qemu-smoke.sh

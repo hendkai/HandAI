@@ -1,0 +1,36 @@
+{
+  "$comment": "On-device default config. Edit remote hosts (devbox/cloud) to your boxes. Lives on the read-only rootfs; user tokens + recent live under /data (HANDAI_STATE).",
+
+  "providers": [
+    { "id": "claude", "label": "Claude Code", "command": ["claude"],
+      "auth": "oauth-device", "login_command": ["claude", "login"],
+      "allowed_modes": ["local", "devbox"] },
+
+    { "id": "codex", "label": "Codex CLI", "command": ["codex"],
+      "auth": "oauth-device", "login_command": ["codex", "login"],
+      "allowed_modes": ["local", "devbox"] },
+
+    { "id": "codex-remote", "label": "Codex (remote/cloud)", "command": ["codex", "--cloud"],
+      "auth": "token-env", "token_env": "OPENAI_API_KEY",
+      "allowed_modes": ["devbox", "cloud"] },
+
+    { "id": "hermes", "label": "Hermes Agent (remote)", "command": ["hermes", "agent"],
+      "auth": "token-env", "token_env": "HERMES_API_KEY",
+      "allowed_modes": ["devbox", "cloud"] },
+
+    { "id": "opencode", "label": "opencode", "command": ["opencode"],
+      "auth": "token-env", "token_env": "OPENCODE_API_KEY",
+      "allowed_modes": ["local", "devbox"] }
+  ],
+
+  "modes": [
+    { "id": "local",  "label": "Local (on-device)", "transport": "local",
+      "default_workdir": "~/work" },
+    { "id": "devbox", "label": "Devbox (SSH)", "transport": "ssh",
+      "host": "dev@devbox.local", "default_workdir": "~/projects" },
+    { "id": "cloud",  "label": "Cloud sandbox (SSH)", "transport": "ssh",
+      "host": "${HANDAI_CLOUD_HOST}", "default_workdir": "/workspace" }
+  ],
+
+  "recent_workdirs": ["~/work"]
+}

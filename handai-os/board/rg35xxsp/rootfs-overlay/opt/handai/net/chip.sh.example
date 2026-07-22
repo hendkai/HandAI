@@ -1,0 +1,23 @@
+#!/bin/sh
+# EXAMPLE chip hook — copy to chip.sh (drop the .example) and adapt to the
+# actual WiFi chip in your RG35xxSP revision. up.sh runs chip.sh before bringing
+# the interface up. This is the one genuinely board-specific piece of WiFi.
+#
+# Find your chip first (on the device): run  scripts/wifi-preflight.sh
+# It prints loaded modules and firmware dirs so you know what to load.
+set -u
+
+# --- 1) load the kernel module (name varies: rtl8821cs, rtl8188fu, aic8800, …)
+# Some SDIO chips need parameters; the vendor kernel usually auto-loads via the
+# device tree. Only modprobe here if it does NOT come up on its own.
+# modprobe rtl8821cs 2>/dev/null || true
+
+# --- 2) firmware: the blob must exist under /lib/firmware/<path> that the driver
+# requests. Put the vendor firmware in the rootfs overlay at
+#   board/rg35xxsp/rootfs-overlay/lib/firmware/<path>
+# (extract it from the CFW you already run on the device).
+
+# --- 3) give the SDIO device a moment to enumerate
+sleep 1
+
+exit 0

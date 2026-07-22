@@ -1,0 +1,66 @@
+name: nightly-qemu
+
+# Level 2 (heavy): build the whole distro for QEMU aarch64 and boot it, asserting
+# the cockpit comes up. Uses a mainline kernel (QEMU 'virt') so NO vendor blobs
+# are needed. Scheduled nightly + manually dispatchable; never blocks PRs.
+
+on:
+  schedule:
+    - cron: "0 3 * * *"   # 03:00 UTC daily
+  workflow_dispatch:
+    inputs:
+      buildroot_ref:
+        description: "Buildroot git tag/branch to build against"
+        default: "2024.02.9"
+
+env:
+  BUILDROOT_REF: ${{ github.event.inputs.buildroot_ref || '2024.02.9' }}
+
+jobs:
+  qemu-boot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - name: Checkout HandAI
+        uses: actions/checkout@v4
+        with:
+          path: HandAI
+
+      - name: Install build + QEMU deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential bc bison flex libssl-dev libncurses-dev \
+            unzip rsync file wget cpio python3 qemu-system-arm ccache
+
+      - name: Clone Buildroot (${{ env.BUILDROOT_REF }})
+        run: git clone --depth 1 --branch "$BUILDROOT_REF" \
+               https://gitlab.com/buildroot.org/buildroot.git buildroot
+
+      - name: Cache Buildroot downloads + ccache
+        uses: actions/cache@v4
+        with:
+          path: |
+            buildroot/dl
+            ~/.buildroot-ccache
+          key: br-${{ env.BUILDROOT_REF }}-${{ hashFiles('HandAI/handai-os/configs/qemu_aarch64_handai_defconfig') }}
+          restore-keys: br-${{ env.BUILDROOT_REF }}-
+
+      - name: Configure
+        working-directory: buildroot
+        run: make BR2_EXTERNAL="$GITHUB_WORKSPACE/HandAI/handai-os" qemu_aarch64_handai_defconfig
+
+      - name: Build image
+        working-directory: buildroot
+        run: make -j"$(nproc)" BR2_CCACHE_DIR="$HOME/.buildroot-ccache"
+
+      - name: Boot smoke test
+        run: HandAI/scripts/qemu-smoke.sh buildroot/output/images 120
+
+      - name: Upload serial log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qemu-serial-log
+          path: buildroot/output/images/*.log
+          if-no-files-found: ignore

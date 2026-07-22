@@ -1,0 +1,126 @@
+# HandAI
+
+> **Lizenz:** Öffentlich einsehbar und für nicht-kommerzielle Nutzung,
+> Änderung und Weitergabe freigegeben unter der
+> [PolyForm Noncommercial License 1.0.0](LICENSE). Kommerzielle Nutzung ist
+> nicht gestattet. Das Projekt ist daher „source available“, nicht OSI Open Source.
+
+Eine **eigene Linux-Distro + Cockpit** für Retro-Handhelds (RG35xxSP & andere
+Allwinner-H700-Geräte), die das Gerät zur **gamepad-bedienbaren Fernbedienung für
+AI-Coding-Agents** macht: `claude`, `codex`, `codex-remote`, `hermes`, `opencode`, …
+
+Du wählst pro Sitzung **Provider × Modus × Arbeitsverzeichnis** und kannst **mitten im
+Betrieb** Provider *und* Modus wechseln — der vorherige Agent läuft dabei weiter.
+
+- **Lokal** = die Agent-CLI läuft auf dem Handheld und spricht die Cloud-API des
+  Providers an (kein lokales Modell — 1 GB RAM gibt das nicht her).
+- **Remote** = SSH auf eine Devbox / Cloud-Sandbox, die den Agenten fährt. Ideal für
+  `hermes` und `codex-remote`. Die Sitzung überlebt Detach/Standby des Handhelds.
+
+## Warum das so gebaut ist
+Zwei Ideen tragen alles (Details in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)):
+1. **Datengetrieben** — Provider und Modi sind reine JSON-Einträge. Neuen Agenten
+   ergänzen = Config editieren, kein Code.
+2. **tmux-Persistenz** — jede Sitzung ist `tmux new-session -A -s …`. Wechsel =
+   „andere Session attachen", verlustfrei. Remote-Sessions leben auf dem tmux-Server
+   des Remote-Hosts und laufen weiter, auch wenn das Handheld weg ist.
+
+## Projektstruktur
+```
+handai/                Core (stdlib-only Python) + curses-Referenz-UI
+  config.py            Provider/Modi/recent aus JSON
+  providers.py         Provider/Mode-Modelle (datengetrieben)
+  secrets.py           Token-Store (0600)
+  router.py            (provider,mode,workdir) → persistentes tmux/ssh-Target
+  tmux.py              Session-Inventar lokal + je Remote-Host
+  network.py           WLAN-Steuerung (wpa_cli) fürs Netzwerk-Menü
+  remote.py            sichere Remote-Token-Provisionierung (Token via ssh-stdin)
+  skills.py            zentraler Skills-Hub: Install aus dem Internet + Tool-Adapter
+  osk.py               On-Screen-Keyboard (nur d-pad + A/B)
+  pixelgui.py          SDL2-Pixel-Art-GUI (640x480, Gamepad + Bildschirmtastatur)
+  cockpit.py           curses-Fallback: New session · Sessions · Providers · Skills · Network · Settings
+config/handai.example.json   Beispiel mit allen genannten Providern
+handai-os/             Buildroot external tree → bootfähiges Image (siehe handai-os/README.md)
+tests/                 Testsuite (python -m unittest discover -s tests)
+dev/                   Offline-Fake-Provider-Harness (make demo) — Test ohne Accounts
+docs/ARCHITECTURE.md   Aufbau & Designentscheidungen
+docs/DISTRO.md         Eigene Distro: Buildroot + H700-Bootchain + Boot→Cockpit
+docs/TESTING.md        Testen ohne Hardware: Host · QEMU aarch64 · Gerät
+docs/PROVIDERS.md      Provider hinzufügen, Auth, Remote-Token-Bereitstellung
+docs/SKILLS.md         Zentraler Skills-Hub: Install aus dem Internet, Tool-Adapter
+```
+
+## Steuerung — alles mit den Handheld-Tasten?
+- **Cockpit-Navigation: ja, vollständig.** Jedes Menü ist d-pad + A/B, jede Texteingabe
+  (Token, Pfad, WLAN-Passwort, Skill-Quelle) läuft über das On-Screen-Keyboard —
+  ebenfalls nur d-pad + A/B. Kein physisches Keyboard nötig.
+- **Tippen *an den Agenten*: gelöst.** In einer laufenden Sitzung bist du in der TUI
+  von `claude`/`codex` (in tmux). Ein **Compose-Button** (tmux `display-popup`, per
+  Default auf F2, in [tmux.conf](handai-os/board/rg35xxsp/rootfs-overlay/etc/handai/tmux.conf))
+  blendet das On-Screen-Keyboard ein; der komponierte Text geht per `tmux send-keys` in
+  die Session. Damit ist der ganze Loop — navigieren *und* tippen — tastenbedienbar.
+  Live gegen eine echte tmux-Session getestet. (Eine BT-Tastatur geht natürlich auch.)
+
+## Testen ohne Hardware
+Drei Ebenen, nur die oberste braucht das Gerät (Details in [docs/TESTING.md](docs/TESTING.md)):
+```bash
+make test    # Ebene 1: Kernlogik (20 Tests)
+make demo    # Ebene 1: Cockpit-Flow offline mit Fake-Providern (keine Accounts)
+# Ebene 2: ganzes Userland in QEMU aarch64 (mainline-Kernel, keine Vendor-Blobs):
+#   make BR2_EXTERNAL=…/handai-os qemu_aarch64_handai_defconfig && make -j"$(nproc)"
+#   handai-os/board/qemu/run-qemu.sh output/images
+```
+
+## Jetzt ausprobieren (auf einem Linux/macOS-Rechner oder Termux)
+Der Core ist überall lauffähig — man braucht kein Handheld zum Entwickeln.
+
+```bash
+# Config validieren + Provider/Modi anzeigen (braucht kein curses)
+HANDAI_CONFIG=config/handai.example.json python3 -m handai --check
+```
+
+```bash
+# Cockpit starten (braucht curses + tmux; nicht auf Windows-Konsole)
+mkdir -p ~/.config/handai && cp config/handai.example.json ~/.config/handai/handai.json
+python3 -m handai
+```
+
+Die SDL2-Pixel-GUI wird automatisch gewählt, wenn SDL2 verfügbar ist. Für die
+Entwicklung lassen sich die Frontends explizit wählen: `python3 -m handai --ui pixel`
+oder `python3 -m handai --ui text`. `HANDAI_FULLSCREEN=0` öffnet die Pixel-GUI
+als 640×480-Fenster.
+
+Unter Windows bringt das Dev-Wheel von pygame die benötigte SDL2-DLL mit; die
+GUI bindet sie direkt und importiert pygame nicht:
+
+```powershell
+python -m pip install -r requirements-dev.txt
+$env:HANDAI_FULLSCREEN="0"
+$env:HANDAI_CONFIG="config/handai.example.json"
+$env:HANDAI_CLOUD_HOST="cloud@sandbox"
+python -m handai --ui pixel
+```
+
+> Windows-Dev-Box: `--check` und die Router-Logik laufen; die curses-TUI braucht
+> Linux/macOS/WSL/Termux (Gerät und Zielumgebung sind ohnehin Linux/ARM).
+
+## Aktueller Stand
+- ✅ **Core** (stdlib-only): Config, Provider/Modi, Router (local+ssh, tmux-persistent),
+  Session-Inventar, Secret-Store, WLAN, sichere Remote-Token-Provisionierung,
+  On-Screen-Keyboard. **20 Tests grün** (`make test`).
+- ✅ **curses-Cockpit**, voll d-pad-navigierbar: New session · Sessions (attach/kill) ·
+  Providers/Login (oauth-device + token-env + „Push token to host") · Network · Settings.
+- ✅ **Distro-Quelle fertig**: Buildroot external tree unter `handai-os/` — drei
+  defconfigs (full / **remote** / qemu), handai-Paket, Init (Boot→Cockpit, kein getty,
+  Exec-Bit-Fix, `/data`-Mount), WLAN-Bringup + Preflight, Agent-Installer, SD-Layout,
+  QEMU-Target. `make BR2_EXTERNAL=…/handai-os rg35xxsp_handai_remote_defconfig && make`.
+- ⛔ **Nur hardware-gebunden offen** (kann ohne das Gerät niemand fertig machen):
+  die Vendor-Blobs `Image` / `*.dtb` / `boot.scr` / `u-boot-*.bin` aus einer
+  RG35xxSP-CFW in `handai-os/board/rg35xxsp/blobs/` legen. Danach baut das Image durch.
+- ✅ **SDL2/DRM-Pixel-Art-Frontend**: natives 640×480-Dashboard, Bitmap-Schrift,
+  Gamepad-Navigation und Bildschirmtastatur; curses bleibt als serieller/QEMU-Fallback.
+
+## Provider-CLI-Flags
+Die `command`/`login_command`/`token_env` in der Config sind sinnvolle Defaults, keine
+garantierten Flags — beim ersten echten Einsatz je Tool an die reale CLI anpassen
+(rein Config, kein Code). Siehe [docs/PROVIDERS.md](docs/PROVIDERS.md).

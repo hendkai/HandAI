@@ -1,0 +1,46 @@
+# HandAI OS — QEMU aarch64 'virt' target for testing WITHOUT hardware.
+# Unlike the RG35xxSP target, this builds a real mainline kernel (QEMU virt is
+# fully supported), so there are NO vendor blobs to source. It boots the exact
+# same rootfs + init flow + cockpit under emulation — the highest-fidelity way
+# to test everything except the SoC-specific display/gamepad bits.
+#
+#   make BR2_EXTERNAL=/path/to/handai-os qemu_aarch64_handai_defconfig
+#   make -j"$(nproc)"
+#   ./handai-os/board/qemu/run-qemu.sh          # boots into the cockpit on serial
+
+BR2_aarch64=y
+BR2_cortex_a53=y
+BR2_TOOLCHAIN_BUILDROOT_GLIBC=y
+
+# init: same as the device — busybox, cockpit as respawn service (no login getty)
+BR2_INIT_BUSYBOX=y
+BR2_TARGET_GENERIC_HOSTNAME="handai-qemu"
+# BR2_TARGET_GENERIC_GETTY is not set
+
+# mainline kernel for the QEMU 'virt' machine (built here, no blobs).
+# arm64's defconfig is arch/arm64/configs/defconfig; Buildroot appends
+# "_defconfig" to a *named* defconfig, so a named value would look for
+# "defconfig_defconfig". Use the arch default config instead.
+BR2_LINUX_KERNEL=y
+BR2_LINUX_KERNEL_USE_ARCH_DEFAULT_CONFIG=y
+BR2_LINUX_KERNEL_IMAGE=y
+
+# HandAI cockpit + runtime (pulls python3/tmux/openssh/ca-certificates)
+BR2_PACKAGE_HANDAI=y
+
+# no Node / no SDL here — integration tests use the fake-agent stub (offline),
+# which keeps the emulated build small and fast.
+
+# wired NAT networking in the VM (so you can test agents reaching real APIs).
+# run-qemu.sh attaches a virtio-net device; this DHCPs it at boot.
+BR2_SYSTEM_DHCP="eth0"
+
+BR2_TARGET_ROOTFS_EXT2=y
+BR2_TARGET_ROOTFS_EXT2_4=y
+BR2_TARGET_ROOTFS_EXT2_SIZE="256M"
+
+# two overlays: the shared device overlay (init service + config) + a QEMU one
+# that overrides the tty (ttyAMA0) and drops in the offline demo config.
+BR2_ROOTFS_OVERLAY="$(BR2_EXTERNAL_HANDAI_PATH)/board/rg35xxsp/rootfs-overlay $(BR2_EXTERNAL_HANDAI_PATH)/board/qemu/rootfs-overlay"
+# post-build: set exec bits on overlay scripts (host FS may not carry them)
+BR2_ROOTFS_POST_BUILD_SCRIPT="$(BR2_EXTERNAL_HANDAI_PATH)/board/post-build.sh"

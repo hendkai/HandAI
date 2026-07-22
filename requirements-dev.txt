@@ -1,0 +1,4 @@
+# Windows GUI testing only. The HandAI device image uses Buildroot's SDL2 and
+# does not install these Python packages.
+pygame==2.6.1
+pytest==9.1.1

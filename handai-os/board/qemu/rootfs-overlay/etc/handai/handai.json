@@ -1,0 +1,19 @@
+{
+  "$comment": "QEMU demo config (overrides the device config in the emulated image). Fake agents, auth none, local mode — the cockpit is fully clickable in QEMU with no accounts/network. Swap in real providers once you're on hardware.",
+
+  "providers": [
+    { "id": "fake-claude", "label": "Fake Claude",
+      "command": ["sh", "/usr/share/handai/fake-agent.sh", "claude"],
+      "auth": "none", "allowed_modes": ["local"] },
+    { "id": "fake-codex", "label": "Fake Codex",
+      "command": ["sh", "/usr/share/handai/fake-agent.sh", "codex"],
+      "auth": "none", "allowed_modes": ["local"] }
+  ],
+
+  "modes": [
+    { "id": "local", "label": "Local (on-device)", "transport": "local",
+      "default_workdir": "/root" }
+  ],
+
+  "recent_workdirs": ["/root", "/tmp"]
+}

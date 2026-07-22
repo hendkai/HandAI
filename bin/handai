@@ -1,0 +1,21 @@
+#!/bin/sh
+# HandAI launcher — resolves repo root, sets sane defaults, starts the cockpit.
+# On the device this is what the init service (S99handai) calls in its respawn loop.
+set -eu
+
+SELF="$(readlink -f "$0" 2>/dev/null || echo "$0")"
+ROOT="$(cd "$(dirname "$SELF")/.." && pwd)"
+
+: "${HANDAI_CONFIG:=${XDG_CONFIG_HOME:-$HOME/.config}/handai/handai.json}"
+: "${HANDAI_STATE:=${XDG_STATE_HOME:-$HOME/.local/state}/handai}"
+export HANDAI_CONFIG HANDAI_STATE
+mkdir -p "$HANDAI_STATE"
+
+# First run: seed config from the shipped example.
+if [ ! -f "$HANDAI_CONFIG" ] && [ -f "$ROOT/config/handai.example.json" ]; then
+  mkdir -p "$(dirname "$HANDAI_CONFIG")"
+  cp "$ROOT/config/handai.example.json" "$HANDAI_CONFIG"
+fi
+
+cd "$ROOT"
+exec python3 -m handai "$@"

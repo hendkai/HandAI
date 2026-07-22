@@ -1,0 +1,54 @@
+# HandAI OS — RG35xxSP (Allwinner H700, Cortex-A53 arm64) defconfig
+# Kernel + U-Boot are supplied as vendor blobs (see board/rg35xxsp/), not built
+# here, because H700 mainline support is incomplete. Buildroot builds the
+# userland (our real distro) around that borrowed bootchain.
+
+BR2_aarch64=y
+BR2_cortex_a53=y
+
+# glibc: Node prebuilts (claude/codex/opencode CLIs) expect glibc, not musl
+BR2_TOOLCHAIN_BUILDROOT_GLIBC=y
+BR2_TOOLCHAIN_BUILDROOT_CXX=y
+
+# init: busybox, cockpit runs as a respawn service (no login getty)
+BR2_INIT_BUSYBOX=y
+BR2_TARGET_GENERIC_HOSTNAME="handai"
+BR2_TARGET_GENERIC_ISSUE="HandAI OS"
+BR2_SYSTEM_BIN_SH_BUSYBOX=y
+# no getty — the cockpit owns the console tty (S99handai respawns it)
+# BR2_TARGET_GENERIC_GETTY is not set
+
+# --- HandAI cockpit + its runtime deps (pull in python3/tmux/openssh/ca-certs)
+BR2_PACKAGE_HANDAI=y
+
+# --- networking (WiFi from the cockpit) --------------------------------------
+BR2_PACKAGE_WPA_SUPPLICANT=y
+BR2_PACKAGE_WPA_SUPPLICANT_CLI=y
+BR2_PACKAGE_DHCPCD=y
+BR2_PACKAGE_IW=y
+BR2_PACKAGE_RFKILL=y
+BR2_PACKAGE_WIRELESS_REGDB=y
+# The WiFi chip's kernel module comes with the borrowed vendor kernel; its
+# firmware blob is board-specific — drop it in the overlay under lib/firmware/
+# and wire loading via opt/handai/net/chip.sh (see chip.sh.example).
+
+# --- shipped GUI frontend (SDL2 straight to the framebuffer, no X) ----------
+BR2_PACKAGE_SDL2=y
+BR2_PACKAGE_SDL2_KMSDRM=y
+
+# --- Node.js: required for claude/codex/opencode local CLIs -------------------
+# Drop these two lines to build the lighter `handai-remote` image (ssh-only).
+BR2_PACKAGE_NODEJS=y
+BR2_PACKAGE_NODEJS_NPM=y
+
+# --- rootfs image ------------------------------------------------------------
+BR2_TARGET_ROOTFS_EXT2=y
+BR2_TARGET_ROOTFS_EXT2_4=y
+BR2_TARGET_ROOTFS_EXT2_SIZE="512M"
+
+# --- our overlay (init service, /etc/handai config) + image assembly ---------
+BR2_ROOTFS_OVERLAY="$(BR2_EXTERNAL_HANDAI_PATH)/board/rg35xxsp/rootfs-overlay"
+# post-build: set exec bits on overlay scripts (host FS may not carry them)
+BR2_ROOTFS_POST_BUILD_SCRIPT="$(BR2_EXTERNAL_HANDAI_PATH)/board/post-build.sh"
+BR2_ROOTFS_POST_IMAGE_SCRIPT="$(BR2_EXTERNAL_HANDAI_PATH)/board/rg35xxsp/post-image.sh"
+BR2_ROOTFS_POST_SCRIPT_ARGS="$(BR2_EXTERNAL_HANDAI_PATH)/board/rg35xxsp/genimage.cfg"

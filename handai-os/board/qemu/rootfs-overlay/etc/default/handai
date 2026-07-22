@@ -1,0 +1,5 @@
+# Board overrides sourced by /etc/init.d/S99handai.
+# QEMU 'virt' exposes its console as ttyAMA0 (the RG35xxSP uses tty1).
+HANDAI_TTY=/dev/ttyAMA0
+HANDAI_UI=text
+HANDAI_FULLSCREEN=0

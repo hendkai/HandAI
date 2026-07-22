@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.claude/
+.codex/
+# vendor bootchain blobs are not redistributable — extract them yourself
+handai-os/board/rg35xxsp/blobs/
+# local user state
+*.secrets.json

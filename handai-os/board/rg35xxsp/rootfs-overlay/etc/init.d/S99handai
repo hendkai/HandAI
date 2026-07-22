@@ -1,0 +1,51 @@
+#!/bin/sh
+# HandAI: the cockpit IS the session. No login getty — boot straight in and
+# respawn on exit so "Quit" just returns to a fresh cockpit.
+
+# Board-specific overrides (tty, wifi iface) live here; QEMU sets HANDAI_TTY=ttyAMA0.
+[ -f /etc/default/handai ] && . /etc/default/handai
+HANDAI_TTY="${HANDAI_TTY:-/dev/tty1}"
+HANDAI_UI="${HANDAI_UI:-pixel}"
+HANDAI_FULLSCREEN="${HANDAI_FULLSCREEN:-1}"
+
+DAEMON_ENV="HANDAI_CONFIG=/etc/handai/handai.json HANDAI_STATE=/data/handai PYTHONPATH=/opt/handai HANDAI_TMUX_CONF=/etc/handai/tmux.conf HANDAI_UI=$HANDAI_UI HANDAI_FULLSCREEN=$HANDAI_FULLSCREEN TERM=linux"
+
+start() {
+	# mount the persistent /data partition if one exists (device only). Node name
+	# is board-specific, so try label first, then common mmc nodes. On QEMU none
+	# of these exist and /data is just a directory on the rootfs — that's fine.
+	mkdir -p /data
+	if ! mountpoint -q /data 2>/dev/null; then
+		for dev in /dev/disk/by-label/handai-data /dev/mmcblk0p4 /dev/mmcblk1p4; do
+			if [ -e "$dev" ]; then
+				mount "$dev" /data 2>/dev/null && break
+			fi
+		done
+	fi
+	mkdir -p /data/handai
+	# boot marker on the console (init stdout) — CI/QEMU smoke test greps this
+	echo "[handai] boot ok — starting cockpit on $HANDAI_TTY"
+	# bring up WiFi in the background (non-fatal if no adapter yet)
+	/opt/handai/net/up.sh >/data/handai/net.log 2>&1 &
+
+	# run the cockpit on tty1, respawn forever
+	(
+		while true; do
+			env $DAEMON_ENV \
+				/usr/bin/python3 -m handai <>"$HANDAI_TTY" >"$HANDAI_TTY" 2>&1
+			sleep 1
+		done
+	) &
+	echo $! > /var/run/handai.pid
+}
+
+stop() {
+	[ -f /var/run/handai.pid ] && kill "$(cat /var/run/handai.pid)" 2>/dev/null
+}
+
+case "$1" in
+	start) start ;;
+	stop)  stop ;;
+	restart) stop; start ;;
+	*) echo "usage: $0 {start|stop|restart}"; exit 1 ;;
+esac
