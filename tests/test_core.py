@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import os
 import struct
+import subprocess
 import sys
 import tempfile
 import time
@@ -23,7 +24,7 @@ import zipfile
 
 from handai.config import Config
 from handai.network import Network, detect_iface, parse_saved_networks, parse_scan_results
-from handai import audio, bootdiag, devices, diagnostics, hardware_report, music, oauth, power, preferences, skill_catalog, skills
+from handai import audio, bootdiag, demo, devices, diagnostics, hardware_report, music, oauth, power, preferences, skill_catalog, skills
 from handai.providers import Mode, OAuthProfile, Provider, parse_modes, parse_providers
 from handai.remote import _export_line
 from handai.router import _cd_expr, build_target, session_name
@@ -477,6 +478,37 @@ class TestDiagnostics(unittest.TestCase):
     def test_summary_marks_failures(self):
         ok,lines=diagnostics.summary([diagnostics.Check("one",True,"ready"),diagnostics.Check("two",False,"missing")])
         self.assertFalse(ok);self.assertEqual(lines,["OK one: ready","FAIL two: missing"])
+
+
+class TestOfflineDemo(unittest.TestCase):
+    @patch("handai.demo.shutil.which", return_value="/usr/bin/tmux")
+    @patch("handai.demo.subprocess.run")
+    def test_starts_real_detached_tmux_session(self, run, _which):
+        run.side_effect=[
+            subprocess.CompletedProcess([],1,"","missing"),
+            subprocess.CompletedProcess([],0,"",""),
+        ]
+        ok,message=demo.start()
+        self.assertTrue(ok);self.assertIn("STARTED",message)
+        self.assertEqual(run.call_args_list[-1].args[0][:5],
+                         ["tmux","new-session","-d","-s",demo.SESSION])
+
+    @patch("handai.demo.start", return_value=(True,"ready"))
+    @patch("handai.demo._run")
+    def test_prompt_is_sent_as_literal_then_enter(self, run, _start):
+        run.return_value=subprocess.CompletedProcess([],0,"","")
+        ok,_=demo.send("hello; not shell code")
+        self.assertTrue(ok)
+        self.assertEqual(run.call_args_list[0].args[0],
+                         ["tmux","send-keys","-t",demo.SESSION,"-l","hello; not shell code"])
+        self.assertEqual(run.call_args_list[1].args[0],
+                         ["tmux","send-keys","-t",demo.SESSION,"Enter"])
+
+    @patch("handai.demo.running", return_value=True)
+    @patch("handai.demo._run")
+    def test_capture_removes_terminal_padding(self, run, _running):
+        run.return_value=subprocess.CompletedProcess([],0,"READY\nRESULT> DONE\n\n\n","")
+        self.assertEqual(demo.capture(),["READY","RESULT> DONE"])
 
 
 class TestTmuxParse(unittest.TestCase):

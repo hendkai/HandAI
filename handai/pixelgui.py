@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Sequence, TypeVar
 
-from . import audio, compose, devices, diagnostics, hardware_report, music, network, oauth, phone, power, preferences, remote, skill_catalog, skills, tailscale, tmux
+from . import audio, compose, demo, devices, diagnostics, hardware_report, music, network, oauth, phone, power, preferences, remote, skill_catalog, skills, tailscale, tmux
 from .config import Config, config_path
 from .providers import Mode, Provider
 from .router import build_target
@@ -1365,6 +1365,31 @@ class PixelCockpit:
     def draw_busy(self,msg):
         self.chrome("WORKING");self.ui.frame(80,165,480,100,self.ui.PINK,4);self.ui.text(110,207,msg,self.ui.YELLOW,2,max_chars=35);self.footer("PLEASE WAIT");self.ui.present()
 
+    def demo_mode(self):
+        ok,detail=demo.start()
+        if not ok:self.toast("DEMO COULD NOT START",[detail]);return
+        self.status=detail
+        while True:
+            self.chrome("OFFLINE DEMO","REAL TMUX SESSION - NO NETWORK, ACCOUNT OR API")
+            self.ui.frame(18,88,604,322,self.ui.CYAN,3)
+            output=demo.capture(13)
+            for row,line in enumerate(output[-13:]):
+                self.ui.text(32,105+row*22,line,self.ui.YELLOW if line.startswith(("YOU", "RESULT")) else self.ui.INK,1,max_chars=94)
+            self.footer("A TYPE PROMPT   START AUTO DEMO   B BACK");self.ui.present()
+            event=self.ui.event()
+            if event=="a":
+                prompt=self.prompt("OFFLINE DEMO PROMPT")
+                if prompt:
+                    sent,message=demo.send(prompt);self.status=message
+                    if not sent:self.toast("DEMO SEND FAILED",[message])
+                    else:time.sleep(0.15)
+            elif event=="done":
+                demo.send("Create a small code change and verify it")
+                time.sleep(0.15)
+            elif event in ("b","cancel","quit"):
+                self.status="DEMO SESSION KEPT ACTIVE FOR PHONE KEYBOARD"
+                return
+
     def run(self):
         self.unlock_credentials()
         # Kiosk/development deep-links intentionally bypass onboarding so a
@@ -1383,14 +1408,14 @@ class PixelCockpit:
         if os.environ.pop("HANDAI_VOICE_HOME","")=="1":self.voice_input()
         if os.environ.pop("HANDAI_AUDIO_HOME","")=="1":self.audio_settings()
         if os.environ.pop("HANDAI_MUSIC_HOME","")=="1":self.music_settings()
-        menu=[("NEW SESSION",self.new_session),("ACTIVE SESSIONS",self.sessions),("PROVIDERS / LOGIN",self.providers),("SKILLS HUB",self.skill_screen),("NETWORK",self.network),("VOICE INPUT",self.voice_input),("PHONE KEYBOARD",self.phone_keyboard),("INSTALL LOCAL AGENTS",self.install_agents),("SETTINGS",self.settings),("QUIT",None)]
+        menu=[("DEMO MODE",self.demo_mode),("NEW SESSION",self.new_session),("ACTIVE SESSIONS",self.sessions),("PROVIDERS / LOGIN",self.providers),("SKILLS HUB",self.skill_screen),("NETWORK",self.network),("VOICE INPUT",self.voice_input),("PHONE KEYBOARD",self.phone_keyboard),("INSTALL LOCAL AGENTS",self.install_agents),("SETTINGS",self.settings),("QUIT",None)]
         idx=0
         while True:
             self.chrome("HOME",self.status)
             for i,(label,_) in enumerate(menu):
-                col=i%2;row=i//2;x=20+col*305;y=94+row*67;sel=i==idx
-                self.ui.rect(x,y,295,54,self.ui.PANEL2 if sel else self.ui.PANEL);self.ui.frame(x,y,295,54,self.ui.CYAN if sel else self.ui.PANEL2,3)
-                self.ui.text(x+18,y+20,label,self.ui.YELLOW if sel else self.ui.INK,2,max_chars=21)
+                col=i%2;row=i//2;x=20+col*305;y=82+row*58;sel=i==idx
+                self.ui.rect(x,y,295,46,self.ui.PANEL2 if sel else self.ui.PANEL);self.ui.frame(x,y,295,46,self.ui.CYAN if sel else self.ui.PANEL2,3)
+                self.ui.text(x+18,y+16,label,self.ui.YELLOW if sel else self.ui.INK,2,max_chars=21)
             self.footer("D-PAD MOVE   A SELECT   B / Q QUIT");self.ui.present();e=self.ui.event()
             if e=="left":idx=(idx-1)%len(menu)
             elif e=="right":idx=(idx+1)%len(menu)

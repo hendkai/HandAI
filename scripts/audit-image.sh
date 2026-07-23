@@ -54,6 +54,7 @@ for path in \
 	opt/handai/handai/assets/music/06-crimson-pincers.wav \
 	opt/handai/handai/hardware_report.py \
 	opt/handai/handai/power.py \
+	opt/handai/handai/demo.py \
 	usr/bin/handai \
 	usr/bin/handai-hardware-report \
 	usr/sbin/handai-boot-log \
@@ -71,6 +72,7 @@ for path in \
 	usr/bin/arecord \
 	usr/bin/amixer \
 	opt/handai/net/chip.sh \
+	usr/share/handai/demo-agent.sh \
 	usr/bin/pw-record \
 	usr/bin/wpctl \
 	usr/bin/wireplumber \

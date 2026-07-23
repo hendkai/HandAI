@@ -21,6 +21,10 @@ done
 
 # fake-agent stubs are invoked via `sh <path>`, so they don't need +x, but make
 # them readable just in case.
-[ -e "$TARGET/usr/share/handai/fake-agent.sh" ] && chmod 0644 "$TARGET/usr/share/handai/fake-agent.sh"
+for demo in \
+	usr/share/handai/fake-agent.sh \
+	usr/share/handai/demo-agent.sh; do
+	[ -e "$TARGET/$demo" ] && chmod 0644 "$TARGET/$demo"
+done
 
 exit 0
