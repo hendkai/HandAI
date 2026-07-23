@@ -210,6 +210,12 @@ def provider_actions(provider:Provider,modes:Sequence[Mode]) -> list[str]:
     return actions
 
 
+def openclaw_gateway_health_argv(address:str,token:str|None=None)->list[str]:
+    argv=["openclaw","gateway","health","--url",address,"--json"]
+    if token:argv.extend(["--token",token])
+    return argv
+
+
 THEMES = (
     Theme("neon-night","HANDAI NEXUS",(4,6,22),(13,15,45),(26,26,74),(232,240,255),(127,132,178),(16,222,255),(255,211,68),(255,39,222),(55,255,180)),
     Theme("gameboy","GAME BOY",(15,56,15),(48,98,48),(74,117,62),(155,188,15),(102,137,38),(139,172,15),(190,204,35),(79,123,35),(174,190,49)),
@@ -1403,9 +1409,7 @@ class PixelCockpit:
         token=self.secrets.get("gateway:managed-"+item.id)
         env=os.environ.copy()
         if item.kind=="openclaw-gateway":
-            argv=["openclaw","gateway","health","--json"]
-            env["OPENCLAW_GATEWAY_URL"]=item.address
-            if token:env["OPENCLAW_GATEWAY_TOKEN"]=token
+            argv=openclaw_gateway_health_argv(item.address,token)
         else:
             argv=[os.environ.get("PYTHON","python"),"-c",
                   "import os;from handai.hermes_remote import HermesRemote;print(HermesRemote(os.environ['HERMES_REMOTE_URL'],os.environ['HERMES_REMOTE_API_KEY']).request('/v1/capabilities'))"]

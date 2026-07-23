@@ -31,7 +31,7 @@ from handai.router import _cd_expr, build_target, session_name
 from handai.secrets import SecretStore
 from handai import tmux
 from handai import phone, tailscale
-from handai.pixelgui import DEEPLAY_CONTROLLER_MAPPING, EvdevInput, PixelCockpit, THEMES, load_theme, save_theme, provider_actions, provider_brand, _FONT
+from handai.pixelgui import DEEPLAY_CONTROLLER_MAPPING, EvdevInput, PixelCockpit, THEMES, load_theme, save_theme, provider_actions, provider_brand, openclaw_gateway_health_argv, _FONT
 
 
 def _claude():
@@ -293,6 +293,12 @@ class TestNativeOAuth(unittest.TestCase):
         self.assertIn("PROVIDER SKILLS",actions);self.assertEqual(actions[-1],"BACK")
         local=provider_actions(Provider("local","Local",["local"]),[LOCAL])
         self.assertNotIn("REMOTE TARGETS",local);self.assertNotIn("PROVIDER SKILLS",local)
+
+    def test_openclaw_health_uses_explicit_remote_credentials(self):
+        argv=openclaw_gateway_health_argv("wss://claw.example","remote-login-token")
+        self.assertEqual(argv,["openclaw","gateway","health","--url",
+                               "wss://claw.example","--json","--token",
+                               "remote-login-token"])
 
     def test_theme_persistence_and_bad_file_fallback(self):
         with tempfile.TemporaryDirectory() as d:
