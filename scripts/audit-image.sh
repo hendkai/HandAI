@@ -72,6 +72,7 @@ for path in \
 	etc/wireplumber/wireplumber.conf.d/51-handai-bluetooth.conf \
 	usr/bin/python3 \
 	usr/bin/ssh \
+	usr/bin/ssh-keygen \
 	usr/bin/tmux \
 	usr/bin/node \
 	usr/bin/npm \
@@ -89,8 +90,14 @@ for path in \
 	usr/bin/qrencode \
 	usr/bin/arecord \
 	usr/bin/amixer \
+	usr/sbin/wpa_supplicant \
+	usr/sbin/wpa_cli \
+	usr/sbin/rfkill \
+	sbin/dhcpcd \
 	opt/handai/net/chip.sh \
 	usr/share/handai/demo-agent.sh \
+	usr/bin/pipewire \
+	usr/bin/pw-play \
 	usr/bin/pw-record \
 	usr/bin/wpctl \
 	usr/bin/wireplumber \
@@ -161,6 +168,16 @@ grep -q '"label": "GITHUB.COM COPILOT"' \
 	echo "headless GitHub Copilot login profile is missing" >&2
 	exit 1
 }
+grep -q 'HERMES_REMOTE_TOKEN' \
+	"$TMP/rootfs/opt/handai/handai/hermes_remote.py" || {
+	echo "Hermes remote login-token credential wiring is missing" >&2
+	exit 1
+}
+if grep -q 'HERMES_REMOTE_API_KEY' \
+	"$TMP/rootfs/opt/handai/handai/hermes_remote.py"; then
+	echo "Hermes remote credential is still mislabeled as an API key" >&2
+	exit 1
+fi
 grep -q 'HARDWARE SELF TEST' "$TMP/rootfs/usr/sbin/handai-boot-log" || {
 	echo "Windows-readable hardware self-test export is missing" >&2
 	exit 1
