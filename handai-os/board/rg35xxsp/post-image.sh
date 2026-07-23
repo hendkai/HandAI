@@ -46,6 +46,7 @@ mkdir -p "$WORK/vendor-root"
 	lib/modules \
 	lib/firmware \
 	'lib/libudev.so.1*' \
+	usr/bin/rtk_hciattach \
 	'usr/lib/libSDL2-2.0.so.0*' \
 	'usr/lib/libmali.so*' \
 	'usr/lib/libEGL.so*' \
@@ -59,14 +60,18 @@ if [ -d "$WORK/vendor-root/lib/modules" ]; then
 	cp -a "$WORK/vendor-root/lib/modules" "$WORK/rootfs/lib/modules"
 fi
 if [ -d "$WORK/vendor-root/lib/firmware" ]; then
-	mkdir -p "$WORK/rootfs/lib"
-	cp -a "$WORK/vendor-root/lib/firmware" "$WORK/rootfs/lib/firmware"
+	mkdir -p "$WORK/rootfs/lib/firmware"
+	cp -a "$WORK/vendor-root/lib/firmware/." "$WORK/rootfs/lib/firmware/"
 fi
 for library in "$WORK/vendor-root/lib"/libudev.so.1*; do
 	[ -e "$library" ] || [ -L "$library" ] || continue
 	cp -a "$library" "$WORK/rootfs/lib/"
 done
 mkdir -p "$WORK/rootfs/usr/lib"
+if [ -x "$WORK/vendor-root/usr/bin/rtk_hciattach" ]; then
+	mkdir -p "$WORK/rootfs/usr/bin"
+	cp -a "$WORK/vendor-root/usr/bin/rtk_hciattach" "$WORK/rootfs/usr/bin/"
+fi
 for pattern in \
 	'libSDL2-2.0.so.0*' \
 	'libmali.so*' \

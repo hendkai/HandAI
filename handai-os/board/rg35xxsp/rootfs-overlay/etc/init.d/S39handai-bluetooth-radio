@@ -1,0 +1,62 @@
+#!/bin/sh
+# Attach the RG35XXSP RTL8821CS Bluetooth UART before bluetoothd starts.
+
+PIDFILE=/run/handai-rtk-hciattach.pid
+LOG=/data/handai/audio.log
+
+radio_ready() {
+	[ -d /sys/class/bluetooth/hci0 ]
+}
+
+start() {
+	mkdir -p /data/handai /run
+	if radio_ready; then
+		echo "[handai-bluetooth] hci0 already ready" >>"$LOG"
+		return 0
+	fi
+	modprobe rtl_btlpm >>"$LOG" 2>&1 || true
+	rfkill unblock bluetooth >>"$LOG" 2>&1 || true
+	if [ ! -x /usr/bin/rtk_hciattach ]; then
+		echo "[handai-bluetooth] rtk_hciattach is missing" >>"$LOG"
+		return 1
+	fi
+	if [ ! -e /dev/ttyS1 ]; then
+		echo "[handai-bluetooth] /dev/ttyS1 is missing" >>"$LOG"
+		return 1
+	fi
+	if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE" 2>/dev/null)" 2>/dev/null; then
+		echo "[handai-bluetooth] attach process already running" >>"$LOG"
+	else
+		/usr/bin/rtk_hciattach -n -s 115200 ttyS1 rtk_h5 >>"$LOG" 2>&1 &
+		echo "$!" >"$PIDFILE"
+	fi
+	attempt=0
+	while [ "$attempt" -lt 20 ]; do
+		if radio_ready; then
+			echo "[handai-bluetooth] hci0 ready" >>"$LOG"
+			return 0
+		fi
+		attempt=$((attempt + 1))
+		sleep 0.25
+	done
+	echo "[handai-bluetooth] attach timed out without hci0" >>"$LOG"
+	return 1
+}
+
+stop() {
+	if [ -f "$PIDFILE" ]; then
+		pid="$(cat "$PIDFILE" 2>/dev/null)"
+		case "$pid" in
+			''|*[!0-9]*) ;;
+			*) kill "$pid" 2>/dev/null || true ;;
+		esac
+		rm -f "$PIDFILE"
+	fi
+}
+
+case "${1:-}" in
+	start) start ;;
+	stop) stop ;;
+	restart) stop; start ;;
+	*) echo "usage: $0 {start|stop|restart}"; exit 1 ;;
+esac

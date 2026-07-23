@@ -64,6 +64,7 @@ for path in \
 	usr/sbin/handai-boot-log \
 	etc/init.d/S05handai-boot \
 	etc/init.d/S06handai-storage \
+	etc/init.d/S39handai-bluetooth-radio \
 	etc/init.d/S99handai \
 	etc/init.d/S45handai-audio \
 	etc/wireplumber/wireplumber.conf.d/51-handai-bluetooth.conf \
@@ -92,7 +93,9 @@ for path in \
 	usr/bin/wpctl \
 	usr/bin/wireplumber \
 	usr/bin/bluetoothctl \
+	usr/bin/rtk_hciattach \
 	usr/bin/whisper-cli \
+	lib/firmware/rtlbt/rtl8821c_fw \
 	etc/ssl/certs/ca-certificates.crt \
 	lib/modules/4.9.170 \
 	lib/modules/mali_kbase.ko \
@@ -120,6 +123,7 @@ grep -q 'OK BEFORE SWITCH_ROOT' "$TMP/initramfs/init" || {
 for path in \
 	etc/init.d/S05handai-boot \
 	etc/init.d/S06handai-storage \
+	etc/init.d/S39handai-bluetooth-radio \
 	etc/init.d/S45handai-audio \
 	etc/init.d/S99handai \
 	usr/sbin/handai-boot-log; do
@@ -157,6 +161,11 @@ grep -q 'blkid -s LABEL -o value' \
 grep -q 'monitor.bluez.seat-monitoring = disabled' \
 	"$TMP/rootfs/etc/wireplumber/wireplumber.conf.d/51-handai-bluetooth.conf" || {
 	echo "embedded Bluetooth audio policy is missing" >&2
+	exit 1
+}
+grep -q 'rtk_hciattach -n -s 115200 ttyS1 rtk_h5' \
+	"$TMP/rootfs/etc/init.d/S39handai-bluetooth-radio" || {
+	echo "RG35XXSP Bluetooth UART attach is missing" >&2
 	exit 1
 }
 grep -a -q '22\.22\.3' "$TMP/rootfs/usr/bin/node" || {

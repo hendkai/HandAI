@@ -83,6 +83,9 @@ def collect(root: Path = Path("/")) -> list[Result]:
                 (sys / "class/net" / name / "phy80211").exists() or
                 name.startswith(("wlan", "wlp", "wl"))]
     results.append(Result("wifi", bool(wireless), True, ",".join(wireless) or "no wireless interface"))
+    bluetooth = sorted(p.name for p in (sys / "class/bluetooth").glob("hci*"))
+    results.append(Result("bluetooth radio", bool(bluetooth), True,
+                          ",".join(bluetooth) or "no Bluetooth HCI controller"))
 
     batteries = _glob_text(sys / "class/power_supply", "*", "capacity")
     statuses = _glob_text(sys / "class/power_supply", "*", "status")
@@ -102,7 +105,8 @@ def collect(root: Path = Path("/")) -> list[Result]:
     results.append(Result("vendor firmware", firmware.is_dir() and any(firmware.rglob("*")), True,
                           str(firmware)))
 
-    for command in ("handai", "python3", "ssh", "tmux", "tailscale", "tailscaled", "qrencode"):
+    for command in ("handai", "python3", "ssh", "tmux", "tailscale", "tailscaled",
+                    "qrencode", "rtk_hciattach"):
         found = shutil.which(command) if root == Path("/") else next(
             (str(root / base / command) for base in ("usr/bin", "usr/sbin", "bin", "sbin")
              if (root / base / command).exists()), None)

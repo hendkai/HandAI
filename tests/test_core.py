@@ -1020,14 +1020,17 @@ class TestHardwareReport(unittest.TestCase):
                 path = root / name; path.parent.mkdir(parents=True, exist_ok=True); path.write_text(value)
             for directory in ("dev/input", "sys/class/net/wlan0/wireless", "data", "lib/modules/4.9.170"):
                 (root / directory).mkdir(parents=True, exist_ok=True)
+            (root / "sys/class/bluetooth/hci0").mkdir(parents=True)
             (root / "dev/input/event0").touch()
-            for command in ("handai", "python3", "ssh", "tmux", "tailscale", "tailscaled", "qrencode"):
+            for command in ("handai", "python3", "ssh", "tmux", "tailscale",
+                            "tailscaled", "qrencode", "rtk_hciattach"):
                 path = root / "usr/bin" / command; path.parent.mkdir(parents=True, exist_ok=True); path.touch()
             results = hardware_report.collect(root)
             report = hardware_report.build_report(results)
             self.assertTrue(report["required_ok"])
             self.assertTrue(next(x for x in results if x.name == "wifi").ok)
             self.assertTrue(next(x for x in results if x.name == "gamepad").ok)
+            self.assertTrue(next(x for x in results if x.name == "bluetooth radio").ok)
 
     def test_missing_builtin_gamepad_is_required_failure(self):
         with tempfile.TemporaryDirectory() as d:
