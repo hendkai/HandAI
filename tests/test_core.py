@@ -333,6 +333,22 @@ class TestNativeOAuth(unittest.TestCase):
                                "wss://claw.example","--json","--token",
                                "remote-login-token"])
 
+    def test_provider_gateway_connection_test_is_live(self):
+        cockpit=object.__new__(PixelCockpit)
+        mode=Mode("managed-home","Home Claw","openclaw-gateway",
+                  endpoint="wss://claw.example")
+        cockpit.pick=lambda *_args,**_kwargs:mode
+        tested=[]
+        cockpit.test_gateway=lambda item:tested.append(item)
+        cockpit.provider_targets(
+            Provider("openclaw","OpenClaw",["openclaw"]),[mode],True
+        )
+        self.assertEqual(len(tested),1)
+        self.assertEqual(
+            (tested[0].id,tested[0].kind,tested[0].address),
+            ("home","openclaw-gateway","wss://claw.example"),
+        )
+
     def test_theme_persistence_and_bad_file_fallback(self):
         with tempfile.TemporaryDirectory() as d:
             path=Path(d)/"ui.json"

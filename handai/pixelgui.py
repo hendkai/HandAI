@@ -768,7 +768,12 @@ class PixelCockpit:
         if test and mode.is_ssh:
             self.draw_busy(f"TESTING {mode.host}");ok,msg=remote.diagnose(mode.host or "")
             self.toast(("READY: " if ok else "NOT READY: ")+msg)
-        elif test:self.toast("REMOTE GATEWAY CONFIGURED",[f"TRANSPORT: {mode.transport}",f"ENDPOINT: {mode.endpoint or '-'}","LIVE HEALTH IS CHECKED WHEN A SESSION STARTS."])
+        elif test:
+            device_id=mode.id.removeprefix("managed-")
+            self.test_gateway(devices.RemoteDevice(
+                device_id,mode.label,mode.transport,mode.endpoint or "",
+                mode.default_workdir or "~",
+            ))
         else:self.toast(mode.label,[f"TRANSPORT: {mode.transport}",f"ADDRESS: {mode.host or mode.endpoint or '-'}",f"WORKDIR: {mode.default_workdir or '-'}"])
 
     def provider_skills(self,p:Provider,remote_modes:Sequence[Mode]):
@@ -1387,14 +1392,17 @@ class PixelCockpit:
                 if token:self.secrets.set("gateway:managed-"+dev.id,token)
                 self.status=f"ADDED HERMES SERVER {label}"
             else:
-                action=self.pick(item.label,["TEST CONNECTION","PAIR SSH KEY","CHANGE GATEWAY TOKEN","REMOVE DEVICE"])
+                credential=("CHANGE REMOTE LOGIN TOKEN" if item.kind=="hermes-api"
+                            else "CHANGE GATEWAY TOKEN")
+                action=self.pick(item.label,["TEST CONNECTION","PAIR SSH KEY",credential,"REMOVE DEVICE"])
                 if action=="TEST CONNECTION":
                     if item.kind=="ssh":
                         self.draw_busy("TESTING SSH");ok,msg=remote.diagnose(item.address);self.toast(("READY: " if ok else "NOT READY: ")+msg)
                     else:self.test_gateway(item)
                 elif action=="PAIR SSH KEY" and item.kind=="ssh":self.setup_ssh(item)
-                elif action=="CHANGE GATEWAY TOKEN" and item.kind in ("openclaw-gateway","hermes-api"):
-                    token=self.prompt("GATEWAY TOKEN",self.secrets.get("gateway:managed-"+item.id) or "",True)
+                elif action in ("CHANGE GATEWAY TOKEN","CHANGE REMOTE LOGIN TOKEN") and item.kind in ("openclaw-gateway","hermes-api"):
+                    title=("REMOTE LOGIN TOKEN" if item.kind=="hermes-api" else "GATEWAY TOKEN")
+                    token=self.prompt(title,self.secrets.get("gateway:managed-"+item.id) or "",True)
                     if token is not None:self.secrets.set("gateway:managed-"+item.id,token) if token else self.secrets.clear("gateway:managed-"+item.id)
                 elif action=="REMOVE DEVICE":
                     devices.remove(item.id);self.secrets.clear("gateway:managed-"+item.id);self.cfg.reload_devices();self.status=f"REMOVED {item.label}"
