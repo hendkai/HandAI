@@ -78,10 +78,10 @@ def main() -> int:
                         rect(x + gx * scale, y + gy * scale, scale, scale, color)
             x += 6 * scale
 
-    cyan = (47, 226, 216)
-    pink = (255, 94, 164)
-    yellow = (255, 210, 74)
-    panel = (5, 8, 24)
+    cyan = (16, 222, 255)
+    pink = (255, 39, 222)
+    yellow = (255, 211, 68)
+    panel = (4, 6, 22)
 
     for y in range(height):
         for x in range(width):
@@ -115,7 +115,7 @@ def main() -> int:
                 tuple((channel + base * 3) // 4 for channel, base in zip(current, panel)),
             )
     text(40, 414, "1/6 BOOTLOADER", cyan, 2)
-    rect(40, 447, 560, 20, (144, 161, 184))
+    rect(40, 447, 560, 20, (127, 132, 178))
     rect(44, 451, 552, 12, (15, 27, 49))
     rect(44, 451, 77, 12, cyan)
     rect(116, 451, 5, 12, pink)

@@ -52,6 +52,7 @@ for path in \
 	opt/handai/handai/power.py \
 	usr/bin/handai \
 	usr/bin/handai-hardware-report \
+	usr/sbin/handai-boot-log \
 	etc/init.d/S05handai-boot \
 	etc/init.d/S99handai \
 	etc/init.d/S45handai-audio \
@@ -76,6 +77,20 @@ for path in \
 	usr/lib/libGLESv2.so.2; do
 	require_file "$path"
 done
+for path in \
+	etc/init.d/S05handai-boot \
+	etc/init.d/S45handai-audio \
+	etc/init.d/S99handai \
+	usr/sbin/handai-boot-log; do
+	[ -x "$TMP/rootfs/$path" ] || {
+		echo "boot diagnostic executable bit missing: /$path" >&2
+		exit 1
+	}
+done
+grep -q 'HANDAI NEXUS' "$TMP/rootfs/opt/handai/handai/pixelgui.py" || {
+	echo "boot-art-matched default theme is missing" >&2
+	exit 1
+}
 grep -a -q 'Mali EGL Video Driver' "$TMP/rootfs/usr/lib/libSDL2-2.0.so.0" || {
 	echo "SDL2 does not contain the H700 Mali fbdev backend" >&2
 	exit 1
@@ -83,9 +98,14 @@ grep -a -q 'Mali EGL Video Driver' "$TMP/rootfs/usr/lib/libSDL2-2.0.so.0" || {
 
 echo ">> checking HandAI boot artwork"
 "$MCOPY" -o -i "$IMAGE@@$BOOT_RESOURCE_OFFSET" ::bootlogo.bmp "$TMP/bootlogo.bmp"
+"$MCOPY" -o -i "$IMAGE@@$BOOT_RESOURCE_OFFSET" ::handai-debug.log "$TMP/handai-debug.log"
 BOOTLOGO_SIZE="$(stat -c '%s' "$TMP/bootlogo.bmp")"
 [ "$BOOTLOGO_SIZE" -gt 1200000 ] || {
 	echo "HandAI boot logo is missing or truncated" >&2
+	exit 1
+}
+grep -q 'If no line starts with RUNTIME' "$TMP/handai-debug.log" || {
+	echo "SD-readable boot debug marker is missing" >&2
 	exit 1
 }
 

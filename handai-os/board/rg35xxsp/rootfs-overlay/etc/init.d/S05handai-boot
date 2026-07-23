@@ -9,8 +9,9 @@ progress() {
 
 case "$1" in
 	start)
+		/usr/sbin/handai-boot-log KERNEL "HandAI userspace reached"
 		progress 28 "KERNEL READY"
+		/usr/sbin/handai-boot-log FILESYSTEM "HandAI SquashFS mounted"
 		progress 44 "FILESYSTEM READY"
 		;;
 esac
-

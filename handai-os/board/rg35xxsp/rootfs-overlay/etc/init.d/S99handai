@@ -23,6 +23,9 @@ start() {
 		done
 	fi
 	mkdir -p /data/handai /data/handai/home/.config
+	/usr/sbin/handai-boot-log STORAGE \
+		"data-mounted=$(mountpoint -q /data && echo yes || echo no)"
+	/usr/sbin/handai-boot-log NETWORK "starting network services"
 	env $DAEMON_ENV /usr/bin/python3 -m handai.bootdiag \
 		--progress 82 "STARTING NETWORK" >>/data/handai/cockpit.log 2>&1 || true
 	# Tailscale keeps node identity on the persistent data partition. Buildroot's
@@ -38,6 +41,7 @@ start() {
 	echo "[handai] boot ok — starting cockpit on $HANDAI_TTY"
 	# bring up WiFi in the background (non-fatal if no adapter yet)
 	/opt/handai/net/up.sh >/data/handai/net.log 2>&1 &
+	/usr/sbin/handai-boot-log GUI "starting SDL cockpit"
 	env $DAEMON_ENV /usr/bin/python3 -m handai.bootdiag \
 		--progress 96 "STARTING GUI" >>/data/handai/cockpit.log 2>&1 || true
 
@@ -48,6 +52,7 @@ start() {
 				/usr/bin/python3 -m handai <"$HANDAI_TTY" \
 				>>/data/handai/cockpit.log 2>&1
 			status=$?
+			/usr/sbin/handai-boot-log GUI_ERROR "cockpit exited with code $status"
 			env $DAEMON_ENV /usr/bin/python3 -m handai.bootdiag \
 				--progress 96 --error "GUI FAILED - CODE $status" \
 				>>/data/handai/cockpit.log 2>&1 || true

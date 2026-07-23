@@ -60,6 +60,13 @@ class TestFramebufferBootDiagnostic(unittest.TestCase):
         self.assertEqual(bootdiag.BOOT_STAGES[bootdiag._stage_index(62)], "DRIVERS")
         self.assertEqual(bootdiag.BOOT_STAGES[bootdiag._stage_index(96)], "GUI")
 
+    def test_default_theme_matches_boot_art_palette(self):
+        theme = THEMES[0]
+        self.assertEqual(theme.label, "HANDAI NEXUS")
+        self.assertEqual(theme.bg, (4, 6, 22))
+        self.assertEqual(theme.cyan, (16, 222, 255))
+        self.assertEqual(theme.pink, (255, 39, 222))
+
 
 LOCAL = Mode(id="local", label="Local", transport="local", default_workdir="~/work")
 DEVBOX = Mode(id="devbox", label="Devbox", transport="ssh", host="dev@box",

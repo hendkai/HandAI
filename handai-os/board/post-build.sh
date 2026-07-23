@@ -10,6 +10,7 @@ for f in \
 	etc/init.d/S05handai-boot \
 	etc/init.d/S45handai-audio \
 	etc/init.d/S99handai \
+	usr/sbin/handai-boot-log \
 	opt/handai/net/up.sh \
 	opt/handai/net/chip.sh \
 	usr/sbin/handai-install-agents ; do

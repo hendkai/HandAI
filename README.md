@@ -143,6 +143,10 @@ python -m handai --ui pixel
 - ✅ **Nachvollziehbarer Bootfortschritt**: Ein segmentierter Pixelbalken zeigt
   die real erreichten Phasen Bootloader, Kernel, Dateisystem, Treiber, Netzwerk
   und GUI. Bei einem Fehler bleibt die betroffene Phase auf dem Display stehen.
+- ✅ **SD-lesbare Frühstartdiagnose**: `handai-debug.log` liegt direkt auf der
+  FAT-Bootpartition und sammelt Bootphase, Uptime, Kernel-Commandline, Boardmodell,
+  `dmesg` sowie Mali-/GUI-Status. Fehlt ein `RUNTIME`-Eintrag, wurde HandAI-
+  Userspace nachweislich nicht erreicht.
 - ✅ **SDL2/DRM-Pixel-Art-Frontend**: natives 640×480-Dashboard, Bitmap-Schrift,
   Gamepad-Navigation, Bildschirmtastatur und zehn dauerhaft wählbare Farb-Skins;
   curses bleibt als serieller/QEMU-Fallback.

@@ -5,6 +5,7 @@ RUNTIME=/run/handai-audio
 LOG=/data/handai/audio.log
 
 start() {
+	/usr/sbin/handai-boot-log DRIVERS "loading Mali and audio drivers"
 	PYTHONPATH=/opt/handai /usr/bin/python3 -m handai.bootdiag \
 		--progress 62 "LOADING DRIVERS" >/dev/null 2>&1 || true
 	mkdir -p "$RUNTIME" /data/handai
@@ -23,6 +24,8 @@ start() {
 	fi
 	PYTHONPATH=/opt/handai /usr/bin/python3 -m handai.bootdiag \
 		--progress 72 "DRIVERS READY" >/dev/null 2>&1 || true
+	/usr/sbin/handai-boot-log DRIVERS \
+		"ready; mali0=$([ -e /dev/mali0 ] && echo yes || echo no)"
 }
 
 stop() {

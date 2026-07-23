@@ -1,0 +1,55 @@
+#!/bin/sh
+# Persist bounded boot diagnostics on the Windows-readable FAT boot partition.
+# Absence of a RUNTIME entry proves the kernel never reached HandAI userspace.
+
+STAGE="${1:-UNKNOWN}"
+DETAIL="${2:-no detail}"
+BOOT_LOG=/boot/handai-debug.log
+DATA_LOG=/data/handai/boot-debug.log
+UPTIME="$(cut -d. -f1 /proc/uptime 2>/dev/null || echo 0)"
+LINE="RUNTIME +${UPTIME}s | ${STAGE} | ${DETAIL}"
+
+append_boot_log() {
+	mountpoint -q /boot 2>/dev/null || return 0
+	BOOT_DEV="$(awk '$2 == "/boot" { print $1; exit }' /proc/mounts)"
+	mount -o remount,rw /boot 2>/dev/null ||
+		mount -o remount,rw "$BOOT_DEV" /boot 2>/dev/null ||
+		return 0
+
+	if [ -f "$BOOT_LOG" ] && [ "$(wc -c <"$BOOT_LOG")" -gt 262144 ]; then
+		mv -f "$BOOT_LOG" /boot/handai-debug.previous.log
+	fi
+	{
+		echo "$LINE"
+		if [ "$STAGE" = "KERNEL" ]; then
+			echo "CMDLINE | $(cat /proc/cmdline 2>/dev/null)"
+			echo "UNAME   | $(uname -a 2>/dev/null)"
+			echo "MODEL   | $(tr -d '\000' </sys/firmware/devicetree/base/model 2>/dev/null)"
+			echo "--- DMESG BEGIN ---"
+			dmesg 2>/dev/null
+			echo "--- DMESG END ---"
+		fi
+		if [ "$STAGE" = "GUI_ERROR" ]; then
+			echo "--- COCKPIT LOG TAIL ---"
+			tail -n 80 /data/handai/cockpit.log 2>/dev/null
+			echo "--- PROCESS SNAPSHOT ---"
+			ps 2>/dev/null
+			echo "--- DMESG TAIL ---"
+			dmesg 2>/dev/null | tail -n 120
+			echo "--- ERROR SNAPSHOT END ---"
+		fi
+	fi >>"$BOOT_LOG"
+	sync "$BOOT_LOG" 2>/dev/null || sync
+	mount -o remount,ro /boot 2>/dev/null ||
+		mount -o remount,ro "$BOOT_DEV" /boot 2>/dev/null ||
+		true
+}
+
+append_data_log() {
+	mountpoint -q /data 2>/dev/null || return 0
+	mkdir -p /data/handai
+	echo "$LINE" >>"$DATA_LOG"
+}
+
+append_boot_log
+append_data_log

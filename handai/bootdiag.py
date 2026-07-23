@@ -60,7 +60,7 @@ def show(
         bytes_per_pixel = bits // 8
         stride = virtual_width * bytes_per_pixel
         with mmap.mmap(framebuffer.fileno(), stride * virtual_height) as screen:
-            background = _pixel((7, 13, 27), bits)
+            background = _pixel((4, 6, 22), bits)
             for y in range(height):
                 start = y * stride
                 screen[start:start + width * bytes_per_pixel] = background * width
@@ -83,15 +83,15 @@ def show(
                                 rect(x + gx * scale, y + gy * scale, scale, scale, color)
                     x += 6 * scale
 
-            cyan = (47, 226, 216)
-            pink = (255, 94, 164)
-            yellow = (255, 210, 74)
-            muted = (144, 161, 184)
+            cyan = (16, 222, 255)
+            pink = (255, 39, 222)
+            yellow = (255, 211, 68)
+            muted = (127, 132, 178)
             red = (255, 72, 82)
             rect(0, 0, width, 8, cyan)
             rect(0, height - 8, width, 8, pink)
             rect(42, 52, 62, 62, cyan)
-            rect(56, 66, 34, 34, (7, 13, 27))
+            rect(56, 66, 34, 34, (4, 6, 22))
             rect(65, 75, 8, 8, yellow)
             rect(78, 75, 8, 8, yellow)
             text(126, 55, "HANDAI", yellow, 5)

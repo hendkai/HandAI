@@ -72,6 +72,12 @@ done
 echo "Generating HandAI boot artwork..."
 python3 "$BOARD_DIR/generate-bootlogo.py" \
 	"$WORK/vendor-bootlogo.bmp" "$WORK/handai-bootlogo.bmp"
+cat >"$WORK/handai-debug.log" <<'EOF'
+HANDAI BOOT DEBUG LOG
+IMAGE | flash completed; waiting for first runtime marker
+HELP  | If no line starts with RUNTIME, Linux userspace was never reached.
+HELP  | Send this file to the HandAI developer after a failed boot.
+EOF
 
 echo "Building HandAI SquashFS..."
 "$MKSQUASHFS" "$WORK/rootfs" "$WORK/handai.squashfs" -noappend -comp gzip -all-root >/dev/null
@@ -83,6 +89,7 @@ chmod u+w "$SDCARD"
 "$MCOPY" -o -i "$SDCARD@@$BOOT_RESOURCE_OFFSET" "$WORK/handai.squashfs" ::boot/batocera
 "$MDEL" -i "$SDCARD@@$BOOT_RESOURCE_OFFSET" ::bootlogo.bmp
 "$MCOPY" -o -i "$SDCARD@@$BOOT_RESOURCE_OFFSET" "$WORK/handai-bootlogo.bmp" ::bootlogo.bmp
+"$MCOPY" -o -i "$SDCARD@@$BOOT_RESOURCE_OFFSET" "$WORK/handai-debug.log" ::handai-debug.log
 
 echo "Creating persistent HandAI data partition..."
 truncate -s "$DATA_SIZE" "$WORK/data.ext4"
