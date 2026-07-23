@@ -80,10 +80,17 @@ class EvdevInput:
             found.append((Path("/dev/input") / entry.name, name))
         return found
 
+    @staticmethod
+    def _is_builtin_name(name: str) -> bool:
+        normalized = name.casefold()
+        return ("deeplay" in normalized or
+                ("anbernic" in normalized and "rg35xx" in normalized and
+                 "controller" in normalized))
+
     def _open(self) -> None:
         devices = self._device_paths()
         selected = next(((path, name) for path, name in devices
-                         if "deeplay" in name.casefold()), None)
+                         if self._is_builtin_name(name)), None)
         if not selected:
             names = ", ".join(f"{path.name}:{name}" for path, name in devices) or "none"
             print(f"input: evdev Deeplay-keys not found; devices={names}", file=sys.stderr)
@@ -346,6 +353,9 @@ class SDL:
             print("input: no SDL GameController opened",file=sys.stderr)
         if os.name == "posix":
             self.evdev=EvdevInput(self.button_map)
+        # Explicitly replace the framebuffer boot diagnostic even before the
+        # first menu is composed.  This also makes an input wait unmistakable.
+        self.clear(); self.present()
 
     def close(self):
         if self.evdev: self.evdev.close(); self.evdev=None
@@ -1236,7 +1246,8 @@ class PixelCockpit:
     def gamepad_calibration(self):
         choice=self.pick("GAMEPAD",["CALIBRATE ALL BUTTONS","USE STANDARD SDL MAPPING","INFO"],subtitle="MAP THE PHYSICAL HANDHELD CONTROLS")
         if choice=="CALIBRATE ALL BUTTONS":
-            if not self.ui.pad:self.toast("NO SDL GAME CONTROLLER DETECTED");return
+            if not self.ui.pad and not (self.ui.evdev and self.ui.evdev.fd is not None):
+                self.toast("NO GAME CONTROLLER DETECTED");return
             mapping={}
             for action,label in (("a","SELECT / A"),("b","BACK / B"),("done","START / DONE"),("cancel","MENU / CANCEL"),("up","D-PAD UP"),("down","D-PAD DOWN"),("left","D-PAD LEFT"),("right","D-PAD RIGHT")):
                 self.chrome("GAMEPAD CALIBRATION",f"PRESS {label} - ESC CANCELS")
@@ -1245,10 +1256,14 @@ class PixelCockpit:
                 button=self.ui.raw_button()
                 if button is None:self.toast("CALIBRATION CANCELLED");return
                 mapping[button]=action
-            preferences.save_button_map(mapping);self.ui.button_map=mapping;self.status="GAMEPAD CALIBRATION SAVED"
+            preferences.save_button_map(mapping);self.ui.button_map=mapping
+            if self.ui.evdev:self.ui.evdev.button_map=mapping
+            self.status="GAMEPAD CALIBRATION SAVED"
         elif choice=="USE STANDARD SDL MAPPING":
-            preferences.save_button_map(preferences.DEFAULT_BUTTONS);self.ui.button_map=preferences.button_map();self.status="STANDARD GAMEPAD MAP RESTORED"
-        elif choice=="INFO":self.toast("RG35XXSP BUTTONS USE SDL STANDARD LAYOUT",["A SELECTS, B GOES BACK, START CONFIRMS.","SET SDL_GAMECONTROLLERCONFIG FOR CUSTOM FIRMWARE MAPS."])
+            preferences.save_button_map(preferences.DEFAULT_BUTTONS);self.ui.button_map=preferences.button_map()
+            if self.ui.evdev:self.ui.evdev.button_map=self.ui.button_map
+            self.status="STANDARD GAMEPAD MAP RESTORED"
+        elif choice=="INFO":self.toast("RG35XXSP BUILT-IN CONTROLS USE DIRECT LINUX INPUT",["A SELECTS, B GOES BACK, START CONFIRMS.","EXTERNAL CONTROLLERS USE SDL."])
 
     def first_run(self,force=False):
         if not force and preferences.completed():return

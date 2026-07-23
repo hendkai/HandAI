@@ -447,6 +447,9 @@ class TestPreferences(unittest.TestCase):
                               11:"up", 12:"down", 13:"left", 14:"right"})
 
     def test_rg35xxsp_evdev_codes(self):
+        self.assertTrue(EvdevInput._is_builtin_name("Deeplay-keys"))
+        self.assertTrue(EvdevInput._is_builtin_name("Anbernic RG35XX-SP Controller"))
+        self.assertFalse(EvdevInput._is_builtin_name("axp2202-pek"))
         reader = object.__new__(EvdevInput)
         reader.button_map = {}
         reader.raw_pending = deque()
