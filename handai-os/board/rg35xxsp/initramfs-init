@@ -1,0 +1,116 @@
+#!/bin/ash
+
+console_status() {
+    message="HANDAI INITRAMFS | $1"
+    echo "${message}"
+    echo "${message}" > /dev/tty0 2>/dev/null || true
+}
+
+persist_status() {
+    mountpoint="$1"
+    status="$2"
+    console_status "${status}"
+    if mount -o remount,rw "${mountpoint}" 2>/dev/null
+    then
+        echo "INITRAMFS | ${status}" >> "${mountpoint}/handai-debug.log"
+        sync
+        mount -o remount,ro "${mountpoint}" 2>/dev/null || true
+    fi
+}
+
+fail_boot() {
+    persist_status /boot_root "FAIL $1"
+    return 1
+}
+
+do_mount() {
+    if mount -o ro "${1}" /boot_root; then return 0; fi
+    return 1
+}
+
+do_root() {
+    console_status "START"
+    mkdir -p /boot_root /new_root /overlay_root /sys /proc || return 1
+    mount -t proc -o nodev,noexec,nosuid proc /proc || return 1
+    mount -t sysfs -o nodev,noexec,nosuid sysfs /sys || return 1
+
+    read -r cmdline < /proc/cmdline
+    for param in ${cmdline}; do
+        case ${param} in
+            dev=*) dev=${param#dev=};;
+            label=*) label=${param#label=};;
+        esac
+    done
+
+    mount -t devtmpfs none /dev || return 1
+    console_status "DEVTMPFS READY"
+    insmod /modules/squashfs.ko 2>/dev/null || true
+
+    while ! do_mount /dev/mmcblk0p3
+    do
+        console_status "WAITING FOR MMC P3"
+        sleep 1
+    done
+    persist_status /boot_root "OK MMC P3 MOUNTED"
+
+    if test -e /boot_root/boot/batocera.update
+    then
+        mount -o remount,rw /boot_root || fail_boot "BOOT REMOUNT RW"
+        mv /boot_root/boot/batocera.update /boot_root/boot/batocera ||
+            fail_boot "APPLY UPDATE"
+        if test -e /boot_root/boot/overlay
+        then
+            mv /boot_root/boot/overlay /boot_root/boot/overlay.old ||
+                fail_boot "MOVE OLD OVERLAY"
+        fi
+        mount -o remount,ro /boot_root || fail_boot "BOOT REMOUNT RO"
+    fi
+
+    mount -t tmpfs -o size=256M tmpfs /overlay_root ||
+        fail_boot "OVERLAY TMPFS"
+    mkdir /overlay_root/base /overlay_root/overlay /overlay_root/work \
+        /overlay_root/saved || fail_boot "OVERLAY DIRECTORIES"
+    persist_status /boot_root "OK OVERLAY TMPFS"
+
+    if test -f /boot_root/boot/overlay
+    then
+        if mount -o ro /boot_root/boot/overlay /overlay_root/saved
+        then
+            cp -pr /overlay_root/saved/* /overlay_root/overlay ||
+                fail_boot "COPY SAVED OVERLAY"
+            umount /overlay_root/saved || fail_boot "UNMOUNT SAVED OVERLAY"
+        fi
+    fi
+    persist_status /boot_root "OK SAVED OVERLAY"
+
+    mount /boot_root/boot/batocera /overlay_root/base ||
+        fail_boot "MOUNT SQUASHFS"
+    persist_status /boot_root "OK SQUASHFS MOUNTED"
+
+    if ! mount -t overlay overlay \
+        -o rw,lowerdir=/overlay_root/base,upperdir=/overlay_root/overlay,workdir=/overlay_root/work \
+        /new_root
+    then
+        mount /boot_root/boot/batocera /new_root ||
+            fail_boot "MOUNT NEW ROOT"
+    fi
+    persist_status /boot_root "OK NEW ROOT MOUNTED"
+
+    test -x /new_root/sbin/init || fail_boot "INIT NOT EXECUTABLE"
+    persist_status /boot_root "OK INIT EXECUTABLE"
+
+    mount --move /boot_root /new_root/boot || fail_boot "MOVE BOOT"
+    mount --move /overlay_root /new_root/overlay || return 1
+    mount --move /sys /new_root/sys || return 1
+    mount --move /proc /new_root/proc || return 1
+    mount --move /dev /new_root/dev || return 1
+
+    persist_status /new_root/boot "OK BEFORE SWITCH_ROOT"
+    exec switch_root /new_root /sbin/init
+}
+
+if ! do_root
+then
+    console_status "FAIL ENTERING RECOVERY SHELL"
+    /bin/ash
+fi

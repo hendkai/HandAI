@@ -30,7 +30,7 @@ if [ ! -f "$TEMPLATE" ]; then
 fi
 
 need_deps=0
-for command in make gcc flex bison bc cpio unzip rsync wget file; do
+for command in make gcc flex bison bc cpio unzip rsync wget file abootimg; do
 	command -v "$command" >/dev/null 2>&1 || need_deps=1
 done
 if [ "$need_deps" = 1 ]; then
@@ -38,7 +38,7 @@ if [ "$need_deps" = 1 ]; then
 	sudo apt-get update
 	sudo apt-get install -y --no-install-recommends \
 		build-essential git bc bison flex libssl-dev libncurses-dev \
-		unzip rsync file wget cpio python3 ccache
+		unzip rsync file wget cpio python3 ccache abootimg
 fi
 
 # Build on the native Linux filesystem. Copy only the verified uncompressed

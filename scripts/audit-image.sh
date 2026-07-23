@@ -15,6 +15,9 @@ for tool in "$MCOPY" "$UNSQUASHFS" "$READELF"; do
 	[ -x "$tool" ] || { echo "missing build host tool: $tool" >&2; exit 2; }
 done
 command -v sfdisk >/dev/null || { echo "missing tool: sfdisk" >&2; exit 2; }
+for tool in abootimg cpio gzip; do
+	command -v "$tool" >/dev/null || { echo "missing host tool: $tool" >&2; exit 2; }
+done
 command -v blkid >/dev/null || { echo "missing tool: blkid" >&2; exit 2; }
 
 # These offsets are part of the pinned KNULLI RG35XXSP GPT layout.
@@ -78,6 +81,22 @@ for path in \
 	usr/lib/libGLESv2.so.2; do
 	require_file "$path"
 done
+
+echo ">> checking diagnostic initramfs"
+mkdir -p "$TMP/android-boot" "$TMP/initramfs"
+dd if="$IMAGE" of="$TMP/android-boot/boot.img" bs=512 skip=73728 \
+	count=40960 status=none
+(
+	cd "$TMP/android-boot"
+	abootimg -x boot.img >/dev/null
+	cd "$TMP/initramfs"
+	gzip -dc "$TMP/android-boot/initrd.img" |
+		cpio -id --no-absolute-filenames >/dev/null 2>&1
+)
+grep -q 'OK BEFORE SWITCH_ROOT' "$TMP/initramfs/init" || {
+	echo "initramfs phase diagnostics are missing" >&2
+	exit 1
+}
 for path in \
 	etc/init.d/S05handai-boot \
 	etc/init.d/S45handai-audio \

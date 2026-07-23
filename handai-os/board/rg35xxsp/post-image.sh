@@ -18,6 +18,9 @@ MKE2FS="$HOST_DIR/sbin/mkfs.ext4"
 for tool in "$MCOPY" "$MDEL" "$UNSQUASHFS" "$MKSQUASHFS" "$MKE2FS"; do
 	[ -x "$tool" ] || { echo "missing host tool: $tool" >&2; exit 1; }
 done
+for tool in abootimg cpio gzip; do
+	command -v "$tool" >/dev/null || { echo "missing host tool: $tool" >&2; exit 1; }
+done
 if [ ! -f "$TEMPLATE" ]; then
 	echo "missing verified RG35xxSP firmware template: $TEMPLATE" >&2
 	echo "run: handai-os/board/rg35xxsp/fetch-firmware.sh" >&2
@@ -27,6 +30,8 @@ fi
 # Offsets are from KNULLI Gladiator II's published RG35xxSP GPT. The fetcher
 # verifies the exact source SHA-256 before this script accepts the image.
 BOOT_RESOURCE_OFFSET=$((147456 * 512))
+BOOT_IMAGE_OFFSET=$((73728 * 512))
+BOOT_IMAGE_SIZE=$((40960 * 512))
 DATA_OFFSET=$((10633216 * 512))
 DATA_SIZE=$((1048576 * 512))
 WORK="$(mktemp -d)"
@@ -79,12 +84,38 @@ HELP  | If no line starts with RUNTIME, Linux userspace was never reached.
 HELP  | Send this file to the HandAI developer after a failed boot.
 EOF
 
+echo "Adding initramfs phase diagnostics..."
+mkdir -p "$WORK/android-boot" "$WORK/initramfs"
+dd if="$TEMPLATE" of="$WORK/android-boot/boot.img" bs=512 \
+	skip=$((BOOT_IMAGE_OFFSET / 512)) count=$((BOOT_IMAGE_SIZE / 512)) \
+	status=none
+(
+	cd "$WORK/android-boot"
+	abootimg -x boot.img >/dev/null
+	cd "$WORK/initramfs"
+	gzip -dc "$WORK/android-boot/initrd.img" |
+		cpio -id --no-absolute-filenames >/dev/null 2>&1
+	install -m 0755 "$BOARD_DIR/initramfs-init" init
+	find . -print0 | LC_ALL=C sort -z |
+		cpio --null -o -H newc 2>/dev/null |
+		gzip -9n >"$WORK/android-boot/initrd-debug.img"
+	cd "$WORK/android-boot"
+	cp boot.img boot-debug.img
+	abootimg -u boot-debug.img -r initrd-debug.img >/dev/null
+)
+[ "$(stat -c %s "$WORK/android-boot/boot-debug.img")" -eq "$BOOT_IMAGE_SIZE" ] || {
+	echo "diagnostic Android boot image has an unexpected size" >&2
+	exit 1
+}
+
 echo "Building HandAI SquashFS..."
 "$MKSQUASHFS" "$WORK/rootfs" "$WORK/handai.squashfs" -noappend -comp gzip -all-root >/dev/null
 
 SDCARD="$BINARIES_DIR/sdcard.img"
 cp --reflink=auto "$TEMPLATE" "$SDCARD"
 chmod u+w "$SDCARD"
+dd if="$WORK/android-boot/boot-debug.img" of="$SDCARD" bs=4M \
+	seek=$((BOOT_IMAGE_OFFSET / 4194304)) conv=notrunc status=none
 "$MDEL" -i "$SDCARD@@$BOOT_RESOURCE_OFFSET" ::boot/batocera
 "$MCOPY" -o -i "$SDCARD@@$BOOT_RESOURCE_OFFSET" "$WORK/handai.squashfs" ::boot/batocera
 "$MDEL" -i "$SDCARD@@$BOOT_RESOURCE_OFFSET" ::bootlogo.bmp
