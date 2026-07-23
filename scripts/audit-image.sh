@@ -65,6 +65,7 @@ for path in \
 	etc/init.d/S05handai-boot \
 	etc/init.d/S99handai \
 	etc/init.d/S45handai-audio \
+	etc/wireplumber/wireplumber.conf.d/51-handai-bluetooth.conf \
 	usr/bin/python3 \
 	usr/bin/ssh \
 	usr/bin/tmux \
@@ -128,6 +129,11 @@ for path in \
 done
 grep -q 'HANDAI NEXUS' "$TMP/rootfs/opt/handai/handai/pixelgui.py" || {
 	echo "boot-art-matched default theme is missing" >&2
+	exit 1
+}
+grep -q 'monitor.bluez.seat-monitoring = disabled' \
+	"$TMP/rootfs/etc/wireplumber/wireplumber.conf.d/51-handai-bluetooth.conf" || {
+	echo "embedded Bluetooth audio policy is missing" >&2
 	exit 1
 }
 "$READELF" -n "$TMP/rootfs/bin/busybox" | grep -q 'OS: Linux, ABI: 4\.9\.0' || {

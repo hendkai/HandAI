@@ -555,6 +555,20 @@ class TestTmuxParse(unittest.TestCase):
         self.assertEqual(attach_argv(remote)[0], "ssh")
 
     @patch("handai.tmux.subprocess.run")
+    def test_unconfigured_remote_host_is_ignored(self, run):
+        sessions = tmux.list_remote("${HANDAI_CLOUD_HOST}")
+        self.assertEqual(sessions, [])
+        run.assert_not_called()
+
+    @patch("handai.tmux.subprocess.run")
+    def test_unconfigured_remote_session_kill_fails_cleanly(self, run):
+        session = tmux.SessionInfo(
+            "handai-cloud", 1, False, "${HANDAI_CLOUD_HOST}"
+        )
+        self.assertFalse(tmux.kill(session))
+        run.assert_not_called()
+
+    @patch("handai.tmux.subprocess.run")
     def test_send_text_streams_prompt_through_tmux_buffer(self,run):
         run.return_value=subprocess.CompletedProcess([],0,"","")
         session=tmux.SessionInfo("handai-demo",1,False,None)

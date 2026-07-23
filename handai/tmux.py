@@ -67,7 +67,7 @@ def list_remote(host: str, timeout: float = 6.0) -> list[SessionInfo]:
             ssh_argv(host,f"tmux list-sessions -F '{_FMT}'",batch=True),
             capture_output=True, text=True, timeout=timeout,
         )
-    except (OSError, subprocess.TimeoutExpired):
+    except (OSError, subprocess.TimeoutExpired, ValueError):
         return []
     if r.returncode != 0:
         return []
@@ -96,7 +96,7 @@ def kill(session: SessionInfo, timeout: float = 6.0) -> bool:
         else:
             r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
         return r.returncode == 0
-    except (OSError, subprocess.TimeoutExpired):
+    except (OSError, subprocess.TimeoutExpired, ValueError):
         return False
 
 
