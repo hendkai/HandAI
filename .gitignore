@@ -3,7 +3,7 @@ __pycache__/
 .pytest_cache/
 .claude/
 .codex/
-# vendor bootchain blobs are not redistributable — extract them yourself
+# verified upstream firmware template is downloaded locally, never committed
 handai-os/board/rg35xxsp/blobs/
 # local user state
 *.secrets.json

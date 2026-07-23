@@ -1,0 +1,3 @@
+#!/bin/sh
+export PYTHONPATH=/opt/handai${PYTHONPATH:+:$PYTHONPATH}
+exec python3 -m handai "$@"

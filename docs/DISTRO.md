@@ -31,9 +31,9 @@ handai-os/                         # separates Repo/Verzeichnis (nicht dieses Py
 │   └── rg35xxsp_handai_defconfig  # das eine Board-Target
 ├── board/
 │   └── rg35xxsp/
-│       ├── kernel/                # Vendor-Kernel-Image + DTB (aus CFW)
-│       ├── uboot/                 # boot.scr / U-Boot (aus CFW)
-│       ├── genimage.cfg           # SD-Kartenlayout (boot + rootfs Partition)
+│       ├── fetch-firmware.sh      # offizielles KNULLI-Template + SHA-256
+│       ├── inspect-firmware.sh    # Partitionen ausschließlich read-only prüfen
+│       ├── post-image.sh          # HandAI-Root in das bewährte GPT-Layout einsetzen
 │       └── rootfs-overlay/        # unser Init + Cockpit-Payload
 │           ├── etc/init.d/S99handai
 │           ├── etc/handai/handai.json
@@ -59,9 +59,10 @@ BR2_PACKAGE_DROPBEAR=n             # openssh reicht; kein sshd nötig (nur clien
 BR2_PACKAGE_SDL2=y                 # für das ausgelieferte GUI-Frontend (DRM/KMS)
 BR2_PACKAGE_SDL2_KMSDRM=y          # SDL rendert ohne X direkt auf den Framebuffer
 BR2_PACKAGE_NODEJS=y               # claude/codex/opencode CLIs brauchen Node
-BR2_TARGET_ROOTFS_EXT4=y           # rootfs-Partition
-# Kernel/U-Boot: als "external" markiert, NICHT von Buildroot gebaut:
-BR2_LINUX_KERNEL=n                 # Vendor-Image via genimage einbinden
+BR2_TARGET_ROOTFS_EXT4=y           # Build-/Werkzeug-Artefakt; final läuft SquashFS
+# Kernel/U-Boot werden nicht neu erfunden: das verifizierte KNULLI-Template
+# liefert Boot0, Boot Package, Kernel, Initramfs und GPT-Layout.
+BR2_LINUX_KERNEL=n
 ```
 
 > Node ist der schwere Brocken (~40–70 MB im Rootfs). Er ist Pflicht, weil Claude
@@ -97,17 +98,15 @@ esac
   das denselben Core (`config`/`router`/`tmux`/`secrets`) über eine kleine C-/Python-
   Bridge oder als Subprozess nutzt. Bis dahin ist die curses-TUI die Referenz-UX.
 
-## SD-Karten-Layout (genimage.cfg, skizziert)
+## SD-Karten-Layout
 
-```
-image sdcard.img {
-  hdimage { }
-  partition uboot   { image = "u-boot.bin"; offset = 8K; }   # Vendor
-  partition boot    { partition-type = 0xC; image = "boot.vfat"; } # kernel+dtb+boot.scr
-  partition rootfs  { partition-type = 0x83; image = "rootfs.ext4"; }
-  partition data    { partition-type = 0x83; image = "data.ext4"; } # persistent
-}
-```
+Das offizielle RG35xxSP-Image wird mit festgeschriebenem SHA-256 geprüft und nur
+lokal als unveränderliche Vorlage benutzt. `post-image.sh` behält dessen Boot0,
+Boot-Package, Android-Bootpartition (Kernel + Initramfs) und GPT exakt bei. Es
+ersetzt auf der FAT-Boot-Resource-Partition ausschließlich `boot/batocera` durch
+ein SquashFS des Buildroot-Targets. Passende Kernelmodule/Firmware werden vorher
+aus dem verifizierten Original-SquashFS übernommen. Partition 4 wird als frisches
+ext4 mit Label `handai-data` formatiert.
 
 ## Gamepad → Tasten
 
@@ -164,16 +163,21 @@ braucht Netz; `npm i -g` der Agent-Pakete). Die genauen npm-Paketnamen ggf. anpa
 
 ## Reproduzierbarer Build — ein Kommando (WSL2/Linux)
 
-`scripts/build-image.sh` erledigt alles: Blob-Vorabprüfung, Deps, Repo aufs Linux-FS
+`scripts/build-image.sh` erledigt alles: Firmware-Download/Hashprüfung, Deps, Repo aufs Linux-FS
 kopieren, Buildroot klonen, bauen. Varianten-wählbar.
 
 ```bash
 bash scripts/build-image.sh                # remote-Variante (empfohlen, ~90 MB)
 VARIANT=full bash scripts/build-image.sh   # inkl. Node + lokale Agent-CLIs
 ```
-Ergebnis: `~/handai-build/buildroot/output/images/sdcard.img`. Voraussetzung: die vier
-Vendor-Blobs liegen in `handai-os/board/rg35xxsp/blobs/` (sonst bricht das Skript früh mit
-Anleitung ab). Manuell ginge auch `make BR2_EXTERNAL=…/handai-os <defconfig> && make`.
+Ergebnis: `~/handai-build/buildroot/output/images/sdcard.img`. Das große Template
+liegt gitignored unter `handai-os/board/rg35xxsp/blobs/` und wird nie veröffentlicht.
+Manuell ginge auch `make firmware` und danach
+`make BR2_EXTERNAL=…/handai-os <defconfig> && make`.
+
+Danach prüft `bash scripts/audit-image.sh ~/handai-build/buildroot/output/images/sdcard.img`
+das fertige Abbild inklusive GPT, SquashFS-Inhalt, Tailscale, HTTPS-Zertifikaten,
+Launcher, Kernelmodulen und persistenter Datenpartition.
 
 ## Flashen
 
@@ -187,7 +191,7 @@ und mit **balenaEtcher** oder **Rufus** flashen.
 
 ## Offene, hardware-abhängige Punkte (brauchen das echte Gerät)
 
-- Exakte Partition-Offsets & `boot.scr` des RG35xxSP (aus Knulli/muOS extrahieren).
-- WLAN-Chip-Firmware-Blob + `up.sh` (SDIO-Chip variiert je Revision).
+- WLAN-Interface und Scan auf der konkreten Hardware; passende Module/Firmware
+  werden bereits aus derselben geprüften KNULLI-Vorlage wie der Kernel importiert.
 - Framebuffer-Auflösung/Rotation (640×480, ggf. gedreht) für das SDL-Frontend.
 - Batterie-/Poweroff-Handling (sichere Session-Beendigung bei Low-Battery).

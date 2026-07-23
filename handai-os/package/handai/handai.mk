@@ -16,7 +16,10 @@ HANDAI_LICENSE_FILES = LICENSE
 
 define HANDAI_INSTALL_TARGET_CMDS
 	$(INSTALL) -d $(TARGET_DIR)/opt/handai
+	rm -rf $(TARGET_DIR)/opt/handai/handai
 	cp -a $(@D)/handai $(TARGET_DIR)/opt/handai/handai
+	$(INSTALL) -D -m 0755 $(HANDAI_PKGDIR)/handai-launcher \
+		$(TARGET_DIR)/usr/bin/handai
 	$(INSTALL) -d $(TARGET_DIR)/etc/handai
 	# seed the on-device config from the example if the overlay didn't provide one
 	test -f $(TARGET_DIR)/etc/handai/handai.json || \

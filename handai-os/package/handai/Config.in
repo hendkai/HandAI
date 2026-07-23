@@ -5,10 +5,11 @@ config BR2_PACKAGE_HANDAI
 	select BR2_PACKAGE_TMUX
 	select BR2_PACKAGE_OPENSSH
 	select BR2_PACKAGE_CA_CERTIFICATES
-	select BR2_PACKAGE_BASH
-	select BR2_PACKAGE_CURL
 	select BR2_PACKAGE_GIT
 	select BR2_PACKAGE_XZ
+	select BR2_PACKAGE_HOST_MTOOLS
+	select BR2_PACKAGE_HOST_SQUASHFS
+	select BR2_PACKAGE_HOST_E2FSPROGS
 	help
 	  HandAI cockpit — gamepad-driven controller for local/remote AI coding
 	  agents. Installs the stdlib-only Python package to /opt/handai and the

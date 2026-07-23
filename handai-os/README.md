@@ -1,7 +1,8 @@
 # handai-os — Buildroot external tree for HandAI OS
 
 Builds a minimal Linux that boots the RG35xxSP straight into the HandAI cockpit.
-The userland (this) is our distro; the H700 bootchain is borrowed as vendor blobs.
+The userland is built by HandAI. The H700 bootchain/layout is copied from a
+SHA-256-pinned official KNULLI RG35xxSP image because upstream H700 support is incomplete.
 
 ## Build (on a Linux build host, not the handheld)
 
@@ -13,23 +14,20 @@ cd buildroot
 # 2) point Buildroot at this external tree and load the board config
 make BR2_EXTERNAL=/path/to/HandAI/handai-os rg35xxsp_handai_defconfig
 
-# 3) drop the vendor bootchain blobs in place (see below), then build
+# 3) fetch and verify the hardware template, then build
+cd /path/to/HandAI && make firmware
+cd /path/to/buildroot
 make -j"$(nproc)"       # -> output/images/sdcard.img
 ```
 
-## Required vendor blobs (the hardware-dependent part)
+## Verified hardware template
 
-`post-image.sh` refuses to build until these exist in `board/rg35xxsp/blobs/`:
-
-| File                                    | Where to get it                          |
-|-----------------------------------------|------------------------------------------|
-| `Image`                                 | kernel from a Knulli/muOS RG35xxSP card  |
-| `sun50i-h700-anbernic-rg35xxsp.dtb`     | same card's boot partition               |
-| `boot.scr`                              | same card's boot partition               |
-| `u-boot-sunxi-with-spl.bin`             | dumped from the card's SPL offset        |
-
-These are GPL kernel + Allwinner vendor bits; we don't redistribute them, you
-extract them from firmware you already run on the device.
+`make firmware` downloads KNULLI Gladiator II's official RG35xxSP image and checks
+the pinned SHA-256 before decompressing it under the gitignored `blobs/` directory.
+The image is not redistributed by HandAI. During assembly, `post-image.sh` copies
+the proven GPT/boot layout, imports its matching kernel modules and firmware into
+the Buildroot userland, replaces `boot/batocera` with HandAI's SquashFS and creates
+a fresh `handai-data` partition. The downloaded source image is never modified.
 
 ## Flash
 
@@ -37,10 +35,23 @@ extract them from firmware you already run on the device.
 sudo dd if=output/images/sdcard.img of=/dev/sdX bs=4M conv=fsync status=progress
 ```
 
+Before flashing, verify the completed image itself (not just Buildroot's target
+directory):
+
+```bash
+bash scripts/audit-image.sh output/images/sdcard.img
+```
+
+The audit checks the pinned four-partition GPT layout, extracts the embedded
+SquashFS, verifies HandAI plus its launcher, HTTPS certificates, SSH, tmux,
+Tailscale, QR tooling and matching vendor kernel modules, then validates the
+`handai-data` ext4 partition and prints the image SHA-256.
+
 ## Variants
-- **Full** (default): Node present → local `claude`/`codex`/`opencode` work on-device.
-- **Remote**: delete the `BR2_PACKAGE_NODEJS*` lines from the defconfig → ~90 MB
-  ssh-only image; the handheld is a pure remote cockpit (`hermes`, `codex-remote`).
+- **Remote** (recommended build-script default): no Node/local agent CLIs; the
+  handheld is a remote cockpit with SSH and gateway clients.
+- **Full**: Node is present so local `claude`/`codex`/`opencode` can be installed
+  and run on-device. Select it with `VARIANT=full`.
 
 ## What boots
 `etc/init.d/S99handai` starts WiFi (`opt/handai/net/up.sh`) and respawns

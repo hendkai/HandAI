@@ -122,9 +122,11 @@ python -m handai --ui pixel
   defconfigs (full / **remote** / qemu), handai-Paket, Init (Boot→Cockpit, kein getty,
   Exec-Bit-Fix, `/data`-Mount), WLAN-Bringup + Preflight, Agent-Installer, SD-Layout,
   QEMU-Target. `make BR2_EXTERNAL=…/handai-os rg35xxsp_handai_remote_defconfig && make`.
-- ⛔ **Nur hardware-gebunden offen** (kann ohne das Gerät niemand fertig machen):
-  die Vendor-Blobs `Image` / `*.dtb` / `boot.scr` / `u-boot-*.bin` aus einer
-  RG35xxSP-CFW in `handai-os/board/rg35xxsp/blobs/` legen. Danach baut das Image durch.
+- ✅ **Reproduzierbarer Hardware-Unterbau**: `make firmware` lädt das offizielle
+  KNULLI-RG35xxSP-Image, prüft dessen festgeschriebenen SHA-256-Hash und verwendet
+  dessen erprobtes GPT-/Kernel-/Initramfs-Layout ausschließlich als lokale Vorlage.
+  Der Imagebau ersetzt darin das Root-System durch HandAI und formatiert die
+  persistente Datenpartition neu; das große Firmware-Template wird nie committed.
 - ✅ **SDL2/DRM-Pixel-Art-Frontend**: natives 640×480-Dashboard, Bitmap-Schrift,
   Gamepad-Navigation, Bildschirmtastatur und zehn dauerhaft wählbare Farb-Skins;
   curses bleibt als serieller/QEMU-Fallback.
