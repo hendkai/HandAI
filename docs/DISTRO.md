@@ -51,6 +51,8 @@ handai-os/                         # separates Repo/Verzeichnis (nicht dieses Py
 
 ```
 BR2_aarch64=y                      # H700 = 4x Cortex-A53, arm64
+BR2_KERNEL_HEADERS_VERSION=y       # ABI muss zum BSP-Kernel 4.9 passen
+BR2_DEFAULT_KERNEL_VERSION="4.9.337"
 BR2_TOOLCHAIN_BUILDROOT_GLIBC=y    # glibc, weil Node-Prebuilts glibc erwarten
 BR2_INIT_BUSYBOX=y                 # winziges init; Cockpit als respawn-Service
 BR2_PACKAGE_PYTHON3=y              # Cockpit-Laufzeit (stdlib-only, keine pip-deps)

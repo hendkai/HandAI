@@ -1,0 +1,60 @@
+From 8c2f36b18da7f8a0ca75413f67cbfd0bcc32f9fe Mon Sep 17 00:00:00 2001
+From: HandAI contributors <handai@localhost>
+Date: Thu, 23 Jul 2026 16:00:00 +0200
+Subject: [PATCH] route: ila: support Linux headers before 4.15
+
+ILA_ATTR_IDENT_TYPE and ILA_ATTR_HOOK_TYPE were added in Linux 4.15.
+Do not build or parse these optional attributes for the HandAI Linux 4.9
+target. Basic locator and checksum-mode ILA support remains available.
+
+Signed-off-by: HandAI contributors <handai@localhost>
+---
+ lib/route/nh_encap_ila.c | 20 --------------------
+ 1 file changed, 20 deletions(-)
+
+diff --git a/lib/route/nh_encap_ila.c b/lib/route/nh_encap_ila.c
+--- a/lib/route/nh_encap_ila.c
++++ b/lib/route/nh_encap_ila.c
+@@ -46,11 +46,6 @@
+ 	if (ila_encap->has_csum_mode)
+ 		NLA_PUT_U8(msg, ILA_ATTR_CSUM_MODE, ila_encap->csum_mode);
+ 
+-	if (ila_encap->has_ident_type)
+-		NLA_PUT_U8(msg, ILA_ATTR_IDENT_TYPE, ila_encap->ident_type);
+-
+-	if (ila_encap->has_hook_type)
+-		NLA_PUT_U8(msg, ILA_ATTR_HOOK_TYPE, ila_encap->hook_type);
+ 
+ 	return 0;
+ 
+@@ -98,8 +93,6 @@
+ static struct nla_policy ila_encap_policy[ILA_ATTR_MAX + 1] = {
+ 	[ILA_ATTR_LOCATOR] = { .type = NLA_U64 },
+ 	[ILA_ATTR_CSUM_MODE] = { .type = NLA_U8 },
+-	[ILA_ATTR_IDENT_TYPE] = { .type = NLA_U8 },
+-	[ILA_ATTR_HOOK_TYPE] = { .type = NLA_U8 },
+ };
+ 
+ static int ila_encap_parse_msg(struct nlattr *nla,
+@@ -134,19 +127,6 @@
+ 			return err;
+ 	}
+ 
+-	if (tb[ILA_ATTR_IDENT_TYPE]) {
+-		err = rtnl_nh_set_encap_ila_ident_type(
+-			nh_encap, nla_get_u8(tb[ILA_ATTR_IDENT_TYPE]));
+-		if (err < 0)
+-			return err;
+-	}
+-
+-	if (tb[ILA_ATTR_HOOK_TYPE]) {
+-		err = rtnl_nh_set_encap_ila_hook_type(
+-			nh_encap, nla_get_u8(tb[ILA_ATTR_HOOK_TYPE]));
+-		if (err < 0)
+-			return err;
+-	}
+ 
+ 	*encap_out = _nl_steal_pointer(&nh_encap);
+ 
+-- 
+2.47.2

@@ -59,7 +59,19 @@ if [ ! -d "$BR" ]; then
 		https://gitlab.com/buildroot.org/buildroot.git "$BR"
 fi
 cd "$BR"
+PREVIOUS_HEADERS="$(
+	sed -n 's/^BR2_DEFAULT_KERNEL_HEADERS="\(.*\)"/\1/p' .config 2>/dev/null ||
+		true
+)"
 make BR2_EXTERNAL="$SRC/handai-os" "$DEFCONFIG"
+CURRENT_HEADERS="$(
+	sed -n 's/^BR2_DEFAULT_KERNEL_HEADERS="\(.*\)"/\1/p' .config
+)"
+if [ -d output/host ] && [ "$PREVIOUS_HEADERS" != "$CURRENT_HEADERS" ]; then
+	echo ">> kernel ABI changed ($PREVIOUS_HEADERS -> $CURRENT_HEADERS); rebuilding toolchain..."
+	make clean
+	make BR2_EXTERNAL="$SRC/handai-os" "$DEFCONFIG"
+fi
 make handai-dirclean >/dev/null 2>&1 || true
 echo ">> building (the first toolchain build takes a while)..."
 make -j"$(nproc)"

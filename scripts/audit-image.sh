@@ -9,8 +9,9 @@ IMAGE_DIR="$(dirname "$IMAGE")"
 HOST_BIN="${HOST_BIN:-$(realpath "$IMAGE_DIR/../host/bin" 2>/dev/null || true)}"
 MCOPY="${MCOPY:-$HOST_BIN/mcopy}"
 UNSQUASHFS="${UNSQUASHFS:-$HOST_BIN/unsquashfs}"
+READELF="${READELF:-$HOST_BIN/aarch64-buildroot-linux-gnu-readelf}"
 
-for tool in "$MCOPY" "$UNSQUASHFS"; do
+for tool in "$MCOPY" "$UNSQUASHFS" "$READELF"; do
 	[ -x "$tool" ] || { echo "missing build host tool: $tool" >&2; exit 2; }
 done
 command -v sfdisk >/dev/null || { echo "missing tool: sfdisk" >&2; exit 2; }
@@ -89,6 +90,10 @@ for path in \
 done
 grep -q 'HANDAI NEXUS' "$TMP/rootfs/opt/handai/handai/pixelgui.py" || {
 	echo "boot-art-matched default theme is missing" >&2
+	exit 1
+}
+"$READELF" -n "$TMP/rootfs/bin/busybox" | grep -q 'OS: Linux, ABI: 4\.9\.0' || {
+	echo "userland ABI does not match the RG35XXSP Linux 4.9 kernel" >&2
 	exit 1
 }
 grep -a -q 'Mali EGL Video Driver' "$TMP/rootfs/usr/lib/libSDL2-2.0.so.0" || {
