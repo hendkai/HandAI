@@ -18,7 +18,7 @@ import zipfile
 
 from handai.config import Config
 from handai.network import Network, detect_iface, parse_saved_networks, parse_scan_results
-from handai import devices, diagnostics, hardware_report, power, preferences, skill_catalog, skills
+from handai import audio, devices, diagnostics, hardware_report, power, preferences, skill_catalog, skills
 from handai.providers import Mode, Provider, parse_modes, parse_providers
 from handai.remote import _export_line
 from handai.router import _cd_expr, build_target, session_name
@@ -528,6 +528,39 @@ class TestCompose(unittest.TestCase):
             ["tmux", "send-keys", "-t", "mysess", "-l", "--", "-rf hello"],
         )
         self.assertEqual(enter_argv("mysess"), ["tmux", "send-keys", "-t", "mysess", "Enter"])
+
+
+class TestVoiceInput(unittest.TestCase):
+    def test_pipewire_sources_parse_capture_nodes_only(self):
+        raw=json.dumps([
+            {"id":42,"info":{"props":{"media.class":"Audio/Source","node.name":"bluez_input.aa","node.description":"Sofa Headset"}}},
+            {"id":43,"info":{"props":{"media.class":"Audio/Sink","node.name":"bluez_output.aa","node.description":"Sofa Headset"}}},
+        ])
+        self.assertEqual(audio.parse_pipewire_dump(raw),[
+            audio.AudioSource("bluez_input.aa","Sofa Headset","pipewire")
+        ])
+
+    def test_arecord_sources_parse_devices_not_descriptions(self):
+        raw="null\n    Discard all samples\ndefault\n    Default\nhw:CARD=USB,DEV=0\n    USB mic\nplughw:CARD=USB,DEV=0\n"
+        got=audio.parse_arecord_list(raw)
+        self.assertEqual([x.id for x in got],["default","hw:CARD=USB,DEV=0","plughw:CARD=USB,DEV=0"])
+
+    def test_record_commands_are_argument_safe(self):
+        wav=Path("prompt.wav")
+        pw=audio.record_argv(audio.AudioSource("bluez_input.name","Headset","pipewire"),wav)
+        alsa=audio.record_argv(audio.AudioSource("hw:CARD=USB,DEV=0","USB","alsa"),wav)
+        self.assertIn("--target=bluez_input.name",pw)
+        self.assertEqual(alsa[0:4],["arecord","-q","-D","hw:CARD=USB,DEV=0"])
+
+    def test_bluetooth_listing_parser(self):
+        text="Device AA:BB:CC:DD:EE:FF Living Room Headset\nController 00:11 nope\n"
+        self.assertEqual(audio.parse_bluetooth_devices(text),[
+            audio.BluetoothDevice("AA:BB:CC:DD:EE:FF","Living Room Headset")
+        ])
+
+    def test_model_checksum_is_pinned(self):
+        self.assertEqual(len(audio.MODEL_SHA256),64)
+        self.assertTrue(all(c in "0123456789abcdef" for c in audio.MODEL_SHA256))
 
 
 class TestConfigLoad(unittest.TestCase):

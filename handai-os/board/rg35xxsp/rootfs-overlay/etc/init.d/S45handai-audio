@@ -1,0 +1,30 @@
+#!/bin/sh
+# System-wide PipeWire/WirePlumber instance for ALSA and Bluetooth HFP capture.
+
+RUNTIME=/run/handai-audio
+LOG=/data/handai/audio.log
+
+start() {
+	mkdir -p "$RUNTIME" /data/handai
+	chmod 0700 "$RUNTIME"
+	if command -v pipewire >/dev/null 2>&1 && ! pidof pipewire >/dev/null 2>&1; then
+		XDG_RUNTIME_DIR="$RUNTIME" PIPEWIRE_RUNTIME_DIR="$RUNTIME" \
+			pipewire >>"$LOG" 2>&1 &
+	fi
+	sleep 1
+	if command -v wireplumber >/dev/null 2>&1 && ! pidof wireplumber >/dev/null 2>&1; then
+		XDG_RUNTIME_DIR="$RUNTIME" PIPEWIRE_RUNTIME_DIR="$RUNTIME" \
+			wireplumber >>"$LOG" 2>&1 &
+	fi
+}
+
+stop() {
+	killall wireplumber pipewire 2>/dev/null || true
+}
+
+case "$1" in
+	start) start ;;
+	stop) stop ;;
+	restart) stop; start ;;
+	*) echo "usage: $0 {start|stop|restart}"; exit 1 ;;
+esac

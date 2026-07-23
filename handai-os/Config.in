@@ -1,1 +1,2 @@
 source "$BR2_EXTERNAL_HANDAI_PATH/package/handai/Config.in"
+source "$BR2_EXTERNAL_HANDAI_PATH/package/whispercpp/Config.in"

@@ -1,0 +1,10 @@
+config BR2_PACKAGE_WHISPERCPP
+	bool "whisper.cpp CLI"
+	depends on BR2_INSTALL_LIBSTDCPP
+	depends on BR2_TOOLCHAIN_HAS_THREADS
+	help
+	  CPU-only local speech recognition used by HandAI voice input.
+	  Model weights are downloaded separately to the persistent data
+	  partition from the cockpit.
+
+	  https://github.com/ggml-org/whisper.cpp

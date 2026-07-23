@@ -8,7 +8,7 @@ HANDAI_TTY="${HANDAI_TTY:-/dev/tty1}"
 HANDAI_UI="${HANDAI_UI:-pixel}"
 HANDAI_FULLSCREEN="${HANDAI_FULLSCREEN:-1}"
 
-DAEMON_ENV="HOME=/data/handai/home XDG_CONFIG_HOME=/data/handai/home/.config HANDAI_CONFIG=/etc/handai/handai.json HANDAI_STATE=/data/handai PYTHONPATH=/opt/handai HANDAI_TMUX_CONF=/etc/handai/tmux.conf HANDAI_UI=$HANDAI_UI HANDAI_FULLSCREEN=$HANDAI_FULLSCREEN TERM=linux"
+DAEMON_ENV="HOME=/data/handai/home XDG_CONFIG_HOME=/data/handai/home/.config XDG_RUNTIME_DIR=/run/handai-audio PIPEWIRE_RUNTIME_DIR=/run/handai-audio HANDAI_CONFIG=/etc/handai/handai.json HANDAI_STATE=/data/handai PYTHONPATH=/opt/handai HANDAI_TMUX_CONF=/etc/handai/tmux.conf HANDAI_UI=$HANDAI_UI HANDAI_FULLSCREEN=$HANDAI_FULLSCREEN TERM=linux"
 
 start() {
 	# mount the persistent /data partition if one exists (device only). Node name

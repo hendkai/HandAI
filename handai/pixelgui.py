@@ -12,12 +12,13 @@ import importlib.util
 import json
 import os
 import shlex
+import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Sequence, TypeVar
 
-from . import devices, diagnostics, hardware_report, network, phone, power, preferences, remote, skill_catalog, skills, tailscale, tmux
+from . import audio, compose, devices, diagnostics, hardware_report, network, phone, power, preferences, remote, skill_catalog, skills, tailscale, tmux
 from .config import Config, config_path
 from .providers import Mode, Provider
 from .router import build_target
@@ -138,7 +139,7 @@ _FONT = {
  "6":("01110","10000","10000","11110","10001","10001","01110"),"7":("11111","00001","00010","00100","01000","01000","01000"),
  "8":("01110","10001","10001","01110","10001","10001","01110"),"9":("01110","10001","10001","01111","00001","00001","01110"),
  "-":("00000","00000","00000","11111","00000","00000","00000"),"_":("00000","00000","00000","00000","00000","00000","11111"),
- ".":("00000","00000","00000","00000","00000","00110","00110"),":":("00000","00110","00110","00000","00110","00110","00000"),
+ ".":("00000","00000","00000","00000","00000","00110","00110"),",":("00000","00000","00000","00000","00110","00110","00100"),":":("00000","00110","00110","00000","00110","00110","00000"),
  "/":("00001","00010","00010","00100","01000","01000","10000"),"\\":("10000","01000","01000","00100","00010","00010","00001"),
  "?":("01110","10001","00001","00010","00100","00000","00100"),"!":("00100","00100","00100","00100","00100","00000","00100"),
  "+":("00000","00100","00100","11111","00100","00100","00000"),"*":("00000","10101","01110","11111","01110","10101","00000"),
@@ -366,7 +367,7 @@ class PixelCockpit:
         return out or [""]
 
     def prompt(self,title:str,initial="",secret=False)->str|None:
-        chars=list("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 /._-:@#+~")
+        chars=list("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 /.,_-:@#+~")
         cols=12; value=initial; pos=0
         while True:
             self.chrome(title,"ON-SCREEN KEYBOARD")
@@ -604,6 +605,96 @@ class PixelCockpit:
         finally:bridge.stop()
         self.status="PHONE KEYBOARD STOPPED"
 
+    def voice_input(self):
+        while True:
+            sources=audio.list_sources();source=audio.selected_source(sources)
+            model="READY" if audio.model_path().exists() else "NOT INSTALLED"
+            acts=[
+                "RECORD PROMPT",
+                f"INPUT SOURCE: {source.label if source else 'NONE'}",
+                "BLUETOOTH HEADSETS",
+                f"LOCAL VOICE MODEL: {model}",
+                "HOW VOICE INPUT WORKS",
+                "BACK",
+            ]
+            act=self.pick("VOICE INPUT",acts,subtitle="LOCAL SPEECH TO TEXT - NO API KEY")
+            if act in (None,"BACK"):return
+            if act=="RECORD PROMPT":self.record_voice_prompt(source)
+            elif act.startswith("INPUT SOURCE"):self.choose_audio_source(sources)
+            elif act=="BLUETOOTH HEADSETS":self.bluetooth_headsets()
+            elif act.startswith("LOCAL VOICE MODEL"):
+                if audio.model_path().exists():
+                    self.toast("LOCAL WHISPER MODEL READY",[str(audio.model_path()),"MULTILINGUAL TINY-Q5 MODEL","NO AUDIO LEAVES THE DEVICE."])
+                elif self.pick("INSTALL VOICE MODEL",["DOWNLOAD 31 MB","CANCEL"],subtitle="MULTILINGUAL - CHECKSUM VERIFIED")=="DOWNLOAD 31 MB":
+                    self.draw_busy("DOWNLOADING VOICE MODEL")
+                    ok,msg=audio.install_model();self.toast(msg if ok else "MODEL INSTALL FAILED",[msg] if not ok else [])
+            elif act=="HOW VOICE INPUT WORKS":
+                self.toast("PUSH TO TALK",[
+                    "CHOOSE A RUNNING AGENT SESSION.",
+                    "SPEAK, THEN PRESS A OR B TO STOP.",
+                    "WHISPER TRANSCRIBES LOCALLY.",
+                    "EDIT THE TEXT, THEN SEND IT.",
+                    "BLUETOOTH MIC REQUIRES HFP OR HSP; A2DP IS PLAYBACK ONLY.",
+                ])
+
+    def choose_audio_source(self,sources):
+        if not sources:
+            self.toast("NO MICROPHONE FOUND",["CONNECT USB AUDIO OR PAIR A BLUETOOTH HFP HEADSET.","THEN OPEN INPUT SOURCE AGAIN."]);return
+        source=self.pick("MICROPHONE",sources,lambda x:f"{x.label} [{x.backend.upper()}]",subtitle="PIPEWIRE SOURCES INCLUDE BLUETOOTH HFP")
+        if source:audio.save_source(source);self.status=f"MICROPHONE: {source.label}"
+
+    def bluetooth_headsets(self):
+        if not shutil.which("bluetoothctl"):self.toast("BLUETOOTH CONTROL IS NOT INSTALLED");return
+        while True:
+            self.draw_busy("READING BLUETOOTH DEVICES")
+            paired=audio.bluetooth_devices()
+            choices=["SCAN AND PAIR",*paired,"BACK"]
+            choice=self.pick("BLUETOOTH HEADSETS",choices,
+                             lambda x:x if isinstance(x,str) else f"{'+' if x.connected else 'O'} {x.label}",
+                             subtitle="PAIR HEADSETS WITH MICROPHONE / HFP")
+            if choice in (None,"BACK"):return
+            if choice=="SCAN AND PAIR":
+                self.draw_busy("SCANNING BLUETOOTH - 8 SECONDS")
+                devices_found=audio.bluetooth_devices(scan=True)
+                device=self.pick("FOUND DEVICES",devices_found,lambda x:x.label)
+                if device:
+                    self.draw_busy(f"PAIRING {device.label}")
+                    ok,msg=audio.connect_bluetooth(device,pair=True);self.toast(msg if ok else "PAIRING FAILED",[msg] if not ok else [])
+            else:
+                self.draw_busy(f"CONNECTING {choice.label}")
+                ok,msg=audio.connect_bluetooth(choice);self.toast(msg if ok else "CONNECTION FAILED",[msg] if not ok else [])
+
+    def record_voice_prompt(self,source):
+        if not source:self.toast("NO MICROPHONE SELECTED",["OPEN INPUT SOURCE OR PAIR A BLUETOOTH HEADSET."]);return
+        if not audio.whisper_available():self.toast("LOCAL SPEECH ENGINE IS NOT INSTALLED");return
+        if not audio.model_path().exists():self.toast("INSTALL THE LOCAL VOICE MODEL FIRST");return
+        self.draw_busy("SCANNING AGENT SESSIONS")
+        sessions=tmux.list_all(self.cfg.modes)
+        session=self.pick("VOICE TARGET",sessions,lambda x:f"{x.name} [{x.host or 'DEVICE'}]")
+        if not session:return
+        wav=audio.recording_path()
+        try:process=audio.start_recording(source,wav)
+        except OSError as e:self.toast(f"MICROPHONE START FAILED: {e}");return
+        u=self.ui;self.chrome("LISTENING",source.label[:78]);u.frame(70,130,500,190,u.PINK,5)
+        # Visual feedback without reading from the capture process.
+        for i,height in enumerate((20,54,88,44,112,70,36,96,58,24,74,104,48,82,30)):
+            x=94+i*29;u.rect(x,225-height//2,12,height,u.CYAN if i%2 else u.YELLOW)
+        u.text(160,346,"SPEAK YOUR PROMPT",u.INK,3,max_chars=24)
+        self.footer("A / B / START  STOP RECORDING");u.present()
+        while u.event() not in ("a","b","done","cancel","quit"):pass
+        ok,msg=audio.stop_recording(process)
+        if not ok or not wav.exists() or wav.stat().st_size<=44:
+            self.toast("RECORDING FAILED",[msg or "NO AUDIO DATA RECEIVED"]);return
+        self.draw_busy("TRANSCRIBING LOCALLY")
+        ok,text=audio.transcribe(wav)
+        if not ok:self.toast("TRANSCRIPTION FAILED",[text]);return
+        edited=self.prompt("EDIT TRANSCRIPT",text)
+        if not edited:return
+        self.draw_busy(f"SENDING TO {session.name}")
+        ok,msg=compose.send_text(session.name,edited,enter=True,host=session.host)
+        self.status=f"VOICE PROMPT SENT TO {session.name}" if ok else f"VOICE SEND FAILED: {msg}"
+        self.toast(self.status)
+
     def sync_local(self,quiet=False):
         results=[]
         for p in self.cfg.providers:
@@ -832,7 +923,8 @@ class PixelCockpit:
         if direct:
             provider=next((p for p in self.cfg.providers if p.id==direct),None)
             if provider:self.provider_hub(provider)
-        menu=[("NEW SESSION",self.new_session),("ACTIVE SESSIONS",self.sessions),("PROVIDERS / LOGIN",self.providers),("SKILLS HUB",self.skill_screen),("NETWORK",self.network),("PHONE KEYBOARD",self.phone_keyboard),("INSTALL LOCAL AGENTS",self.install_agents),("SETTINGS",self.settings),("QUIT",None)]
+        if os.environ.pop("HANDAI_VOICE_HOME","")=="1":self.voice_input()
+        menu=[("NEW SESSION",self.new_session),("ACTIVE SESSIONS",self.sessions),("PROVIDERS / LOGIN",self.providers),("SKILLS HUB",self.skill_screen),("NETWORK",self.network),("VOICE INPUT",self.voice_input),("PHONE KEYBOARD",self.phone_keyboard),("INSTALL LOCAL AGENTS",self.install_agents),("SETTINGS",self.settings),("QUIT",None)]
         idx=0
         while True:
             self.chrome("HOME",self.status)

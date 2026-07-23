@@ -12,7 +12,10 @@ The tmux binding lives in etc/handai/tmux.conf; the popup runs
 
 from __future__ import annotations
 
+import shlex
 import subprocess
+
+from .remote import ssh_argv
 
 
 def send_keys_argv(target: str, text: str) -> list[str]:
@@ -25,14 +28,19 @@ def enter_argv(target: str) -> list[str]:
     return ["tmux", "send-keys", "-t", target, "Enter"]
 
 
-def send_text(target: str, text: str, enter: bool = True, timeout: float = 5.0) -> tuple[bool, str]:
+def send_text(target: str, text: str, enter: bool = True, timeout: float = 5.0,
+              host: str | None = None) -> tuple[bool, str]:
     try:
-        r = subprocess.run(send_keys_argv(target, text), capture_output=True,
+        literal = send_keys_argv(target, text)
+        argv = ssh_argv(host, shlex.join(literal), batch=True) if host else literal
+        r = subprocess.run(argv, capture_output=True,
                            text=True, timeout=timeout)
         if r.returncode != 0:
             return False, (r.stderr.strip() or "send-keys failed")
         if enter:
-            r2 = subprocess.run(enter_argv(target), capture_output=True,
+            enter_cmd = enter_argv(target)
+            argv2 = ssh_argv(host, shlex.join(enter_cmd), batch=True) if host else enter_cmd
+            r2 = subprocess.run(argv2, capture_output=True,
                                text=True, timeout=timeout)
             if r2.returncode != 0:
                 return False, (r2.stderr.strip() or "send Enter failed")

@@ -43,6 +43,7 @@ handai/                Core (stdlib-only Python) + curses-Referenz-UI
   devices.py           persistente SSH-, OpenClaw- und Hermes-Remoteziele
   hermes_remote.py     Terminal-Client für die offizielle Hermes Sessions API
   skills.py            zentraler Skills-Hub: Install aus dem Internet + Tool-Adapter
+  audio.py             Mikrofone, Bluetooth HFP und lokale whisper.cpp-Transkription
   osk.py               On-Screen-Keyboard (nur d-pad + A/B)
   pixelgui.py          SDL2-Pixel-Art-GUI (640x480, Gamepad + Bildschirmtastatur)
   cockpit.py           curses-Fallback: New session · Sessions · Providers · Skills · Network · Settings
@@ -56,6 +57,7 @@ docs/TESTING.md        Testen ohne Hardware: Host · QEMU aarch64 · Gerät
 docs/PROVIDERS.md      Provider hinzufügen, Auth, Remote-Token-Bereitstellung
 docs/SKILLS.md         Zentraler Skills-Hub: Install aus dem Internet, Tool-Adapter
 docs/PHONE_KEYBOARD.md Tailscale-Login + sichere Handy-Tastatur per QR-Pairing
+docs/VOICE_INPUT.md    Mikrofon-, Bluetooth- und Sprachmodell-Einrichtung
 ```
 
 ## Steuerung — alles mit den Handheld-Tasten?
@@ -72,7 +74,7 @@ docs/PHONE_KEYBOARD.md Tailscale-Login + sichere Handy-Tastatur per QR-Pairing
 ## Testen ohne Hardware
 Drei Ebenen, nur die oberste braucht das Gerät (Details in [docs/TESTING.md](docs/TESTING.md)):
 ```bash
-make test    # Ebene 1: Kernlogik und lokale Integrationen (70 Tests)
+make test    # Ebene 1: Kernlogik und lokale Integrationen
 make demo    # Ebene 1: Cockpit-Flow offline mit Fake-Providern (keine Accounts)
 # Ebene 2: ganzes Userland in QEMU aarch64 (mainline-Kernel, keine Vendor-Blobs):
 #   make BR2_EXTERNAL=…/handai-os qemu_aarch64_handai_defconfig && make -j"$(nproc)"
@@ -115,7 +117,7 @@ python -m handai --ui pixel
 ## Aktueller Stand
 - ✅ **Core** (stdlib-only): Config, Provider/Modi, Router (local+ssh, tmux-persistent),
   Session-Inventar, Secret-Store, WLAN, sichere Remote-Token-Provisionierung,
-  On-Screen-Keyboard und Hardware-Abnahmebericht. **70 Tests grün** (`make test`).
+  On-Screen-Keyboard, lokale Spracheingabe und Hardware-Abnahmebericht.
 
 - **Provider-Homes**: Claude, Codex/Codex Remote, Hermes, OpenCode und OpenClaw
   öffnen nach der Auswahl einen vollflächigen Pixel-Logo-Hub. Dort liegen neue
@@ -137,6 +139,10 @@ python -m handai --ui pixel
   curses bleibt als serieller/QEMU-Fallback.
 - ✅ **Tailscale + Phone Keyboard**: Tailscale-Login per QR-Code und temporär
   gekoppelte Handy-Webtastatur für lokale wie entfernte tmux-Sessions.
+- ✅ **Voice Input**: USB-/ALSA-Mikrofone und Bluetooth-Headsets mit HFP/HSP,
+  Push-to-talk, lokale mehrsprachige whisper.cpp-Transkription und Versand des
+  editierbaren Textes an lokale oder entfernte Agent-Sessions. Kein Audio-Upload
+  und kein API-Key erforderlich; Details in [docs/VOICE_INPUT.md](docs/VOICE_INPUT.md).
 - ✅ **Gamepad-Skillkatalog**: Top/Most-downloaded, Trending und Hot von skills.sh
   durchsuchen und installieren, ohne eine Repository-Adresse eintippen zu müssen.
 - ✅ **Remote-Geräte-Assistent**: SSH-Rechner mit Key-Pairing und Diagnose sowie

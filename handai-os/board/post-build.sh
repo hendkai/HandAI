@@ -7,6 +7,7 @@ set -e
 TARGET="$1"
 
 for f in \
+	etc/init.d/S45handai-audio \
 	etc/init.d/S99handai \
 	opt/handai/net/up.sh \
 	opt/handai/net/chip.sh \

@@ -38,17 +38,24 @@ require_file() {
 }
 for path in \
 	opt/handai/handai/pixelgui.py \
+	opt/handai/handai/audio.py \
 	opt/handai/handai/hardware_report.py \
 	opt/handai/handai/power.py \
 	usr/bin/handai \
 	usr/bin/handai-hardware-report \
 	etc/init.d/S99handai \
+	etc/init.d/S45handai-audio \
 	usr/bin/python3 \
 	usr/bin/ssh \
 	usr/bin/tmux \
 	usr/bin/tailscale \
 	usr/sbin/tailscaled \
 	usr/bin/qrencode \
+	usr/bin/arecord \
+	usr/bin/pw-record \
+	usr/bin/wireplumber \
+	usr/bin/bluetoothctl \
+	usr/bin/whisper-cli \
 	etc/ssl/certs/ca-certificates.crt \
 	lib/modules/4.9.170; do
 	require_file "$path"

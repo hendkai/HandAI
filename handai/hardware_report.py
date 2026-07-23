@@ -102,6 +102,15 @@ def collect(root: Path = Path("/")) -> list[Result]:
              if (root / base / command).exists()), None)
         results.append(Result(command, found is not None, True, found or "missing"))
 
+    audio_commands = []
+    for command in ("arecord", "pw-record", "wireplumber", "bluetoothctl", "whisper-cli"):
+        found = shutil.which(command) if root == Path("/") else next(
+            (str(root / base / command) for base in ("usr/bin", "usr/sbin", "bin", "sbin")
+             if (root / base / command).exists()), None)
+        audio_commands.append(f"{command}={'yes' if found else 'no'}")
+    results.append(Result("voice input", all(item.endswith("=yes") for item in audio_commands),
+                          False, " ".join(audio_commands)))
+
     if root == Path("/") and shutil.which("tailscale"):
         code, output = _command(["tailscale", "status", "--json"])
         results.append(Result("tailscale daemon", code == 0, False,

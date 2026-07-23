@@ -44,7 +44,8 @@ bash scripts/audit-image.sh output/images/sdcard.img
 
 The audit checks the pinned four-partition GPT layout, extracts the embedded
 SquashFS, verifies HandAI plus its launcher, HTTPS certificates, SSH, tmux,
-Tailscale, QR tooling and matching vendor kernel modules, then validates the
+Tailscale, QR tooling, ALSA/PipeWire/BlueZ voice capture, whisper.cpp and matching
+vendor kernel modules, then validates the
 `handai-data` ext4 partition and prints the image SHA-256.
 
 After the first real boot, run `handai-hardware-report` over SSH or select
@@ -58,7 +59,9 @@ After the first real boot, run `handai-hardware-report` over SSH or select
   and run on-device. Select it with `VARIANT=full`.
 
 ## What boots
-`etc/init.d/S99handai` starts WiFi (`opt/handai/net/up.sh`) and respawns
+`etc/init.d/S45handai-audio` starts the PipeWire/WirePlumber audio graph for
+USB/ALSA and Bluetooth HFP microphones. `etc/init.d/S99handai` starts WiFi
+(`opt/handai/net/up.sh`) and respawns
 `python3 -m handai` on tty1 with `PYTHONPATH=/opt/handai`,
 `HANDAI_CONFIG=/etc/handai/handai.json`, `HANDAI_STATE=/data/handai`.
 See [../docs/DISTRO.md](../docs/DISTRO.md) for the full rationale.
