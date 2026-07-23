@@ -31,7 +31,7 @@ from handai.providers import Mode, OAuthProfile, Provider, parse_modes, parse_pr
 from handai.remote import _export_line
 from handai.router import _cd_expr, build_target, session_name
 from handai.secrets import SecretStore
-from handai import tmux
+from handai import remote, tmux
 from handai import phone, tailscale
 from handai.pixelgui import DEEPLAY_CONTROLLER_MAPPING, EvdevInput, OSK_CHARS, PixelCockpit, THEMES, load_theme, save_theme, provider_actions, provider_brand, openclaw_gateway_health_argv, publish_gui_ready, _FONT
 
@@ -701,6 +701,23 @@ class TestRemoteExportLine(unittest.TestCase):
         line = _export_line("K", "a'b")
         self.assertEqual(line, "export K='a'\"'\"'b'\n")
         self.assertTrue(line.endswith("\n"))
+
+    @patch("handai.remote.subprocess.run")
+    def test_password_pairing_keeps_password_out_of_ssh_process(self,run):
+        run.return_value.returncode=0
+        run.return_value.stderr=""
+        with tempfile.TemporaryDirectory() as folder:
+            public=Path(folder)/"id_ed25519.pub"
+            public.write_text("ssh-ed25519 AAAATEST handai\n","utf-8")
+            ok,_=remote.pair_with_password(
+                "dev@box.local",public,"secret with spaces",timeout=1
+            )
+        self.assertTrue(ok)
+        kwargs=run.call_args.kwargs
+        argv=run.call_args.args[0]
+        self.assertNotIn("secret with spaces"," ".join(argv))
+        self.assertNotIn("secret with spaces",str(kwargs["env"]))
+        self.assertEqual(kwargs["input"],"ssh-ed25519 AAAATEST handai\n")
 
 
 class TestWifiScanParse(unittest.TestCase):

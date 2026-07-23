@@ -1429,8 +1429,27 @@ class PixelCockpit:
     def setup_ssh(self,item):
         ok,value=remote.ensure_key()
         if not ok:self.toast("SSH KEY CREATION FAILED",[value]);return
-        self.interactive(remote.pair_command(item.address,value))
-        ok,msg=remote.diagnose(item.address);self.toast(("READY: " if ok else "PAIRING INCOMPLETE: ")+msg)
+        ready,msg=remote.diagnose(item.address)
+        if ready:self.toast("SSH READY",[msg]);return
+        method=self.pick("PAIR SSH KEY",[
+            "PAIR WITH REMOTE PASSWORD",
+            "SHOW PUBLIC KEY QR",
+            "CANCEL",
+        ],subtitle="PASSWORD IS USED ONCE; THE KEY IS USED AFTERWARDS")
+        if method=="PAIR WITH REMOTE PASSWORD":
+            password=self.prompt(f"PASSWORD / {item.label}","",True)
+            if password is None:return
+            self.draw_busy(f"PAIRING {item.label}")
+            ok,msg=remote.pair_with_password(item.address,Path(value),password)
+            if not ok:self.toast("SSH PAIRING FAILED",[msg]);return
+        elif method=="SHOW PUBLIC KEY QR":
+            try:public_key=Path(value).read_text("utf-8").strip()
+            except OSError as exc:self.toast("PUBLIC KEY READ FAILED",[str(exc)]);return
+            self.show_qr("SSH PUBLIC KEY",public_key,
+                         "ADD TO AUTHORIZED_KEYS ON COMPUTER - B THEN TEST")
+        else:return
+        ok,msg=remote.diagnose(item.address)
+        self.toast(("READY: " if ok else "PAIRING INCOMPLETE: ")+msg)
 
     def test_gateway(self,item):
         token=self.secrets.get("gateway:managed-"+item.id)

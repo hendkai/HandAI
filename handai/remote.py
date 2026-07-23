@@ -15,6 +15,8 @@ from __future__ import annotations
 import shlex
 import shutil
 import subprocess
+import tempfile
+import os
 from pathlib import Path
 
 from .devices import validate_ssh_host
@@ -67,6 +69,65 @@ def pair_command(host: str, public_key: str) -> list[str]:
             "'umask 077; mkdir -p ~/.ssh; touch ~/.ssh/authorized_keys; "
             "IFS= read -r key; grep -qxF \"$key\" ~/.ssh/authorized_keys || printf \"%s\\n\" \"$key\" >> ~/.ssh/authorized_keys; chmod 600 ~/.ssh/authorized_keys'")
     return ["sh","-c",script,"handai-pair",public_key,host]
+
+
+_INSTALL_KEY_COMMAND = (
+    'umask 077; mkdir -p ~/.ssh; touch ~/.ssh/authorized_keys; '
+    'IFS= read -r key; case "$key" in ssh-*) ;; *) exit 2;; esac; '
+    'grep -qxF "$key" ~/.ssh/authorized_keys || '
+    'printf "%s\\n" "$key" >> ~/.ssh/authorized_keys; '
+    'chmod 700 ~/.ssh; chmod 600 ~/.ssh/authorized_keys'
+)
+
+
+def pair_with_password(host: str, public_key_path: Path, password: str,
+                       timeout: float = 35.0) -> tuple[bool, str]:
+    """Install our public key using one password prompt without a keyboard.
+
+    OpenSSH's askpass hook receives the password from a root-only temporary
+    file. The secret is never placed in argv, the environment, or ssh stdin;
+    stdin carries only the public key.
+    """
+    validate_ssh_host(host)
+    try:
+        public_key = public_key_path.read_text("utf-8").strip()
+    except OSError as exc:
+        return False, f"public key unavailable: {exc}"
+    if not public_key.startswith("ssh-") or "\n" in public_key or "\r" in public_key:
+        return False, "public key file is invalid"
+    runtime = Path("/run") if Path("/run").is_dir() and os.access("/run", os.W_OK) else None
+    try:
+        with tempfile.TemporaryDirectory(prefix="handai-askpass-",
+                                         dir=str(runtime) if runtime else None) as folder:
+            root = Path(folder)
+            secret = root / "secret"
+            helper = root / "askpass"
+            secret.write_text(password, "utf-8")
+            helper.write_text(
+                '#!/bin/sh\nexec cat "$HANDAI_ASKPASS_SECRET"\n', "utf-8"
+            )
+            os.chmod(root, 0o700)
+            os.chmod(secret, 0o600)
+            os.chmod(helper, 0o700)
+            env = os.environ.copy()
+            env.update({
+                "DISPLAY": "handai:0",
+                "SSH_ASKPASS": str(helper),
+                "SSH_ASKPASS_REQUIRE": "force",
+                "HANDAI_ASKPASS_SECRET": str(secret),
+            })
+            base = ssh_argv(host)
+            result = subprocess.run(
+                [*base[:-1], "-o", "NumberOfPasswordPrompts=1",
+                 base[-1], _INSTALL_KEY_COMMAND],
+                input=public_key + "\n", capture_output=True, text=True,
+                timeout=timeout, env=env, start_new_session=True,
+            )
+    except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
+        return False, f"SSH pairing failed: {exc}"
+    if result.returncode != 0:
+        return False, (result.stderr.strip() or "remote rejected the password or key")
+    return True, "SSH public key installed"
 
 
 def _export_line(var: str, token: str) -> str:

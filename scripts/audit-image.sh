@@ -159,6 +159,10 @@ grep -q 'def _ensure_control' "$TMP/rootfs/opt/handai/handai/network.py" || {
 	echo "WiFi boot-race recovery is missing" >&2
 	exit 1
 }
+grep -q 'def pair_with_password' "$TMP/rootfs/opt/handai/handai/remote.py" || {
+	echo "keyboard-free SSH pairing is missing" >&2
+	exit 1
+}
 grep -q '"command": \["codex", "cloud"\]' \
 	"$TMP/rootfs/etc/handai/handai.json" || {
 	echo "current Codex Cloud command is missing" >&2
