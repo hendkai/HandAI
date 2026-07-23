@@ -44,6 +44,7 @@ for path in \
 	opt/handai/handai/pixelgui.py \
 	opt/handai/handai/bootdiag.py \
 	opt/handai/handai/audio.py \
+	opt/handai/handai/network.py \
 	opt/handai/handai/oauth.py \
 	opt/handai/handai/music.py \
 	opt/handai/handai/assets/music/01-pocket-signal.wav \
@@ -62,6 +63,7 @@ for path in \
 	usr/bin/handai-hardware-report \
 	usr/sbin/handai-install-agents \
 	usr/sbin/handai-boot-log \
+	etc/handai/handai.json \
 	etc/init.d/S05handai-boot \
 	etc/init.d/S06handai-storage \
 	etc/init.d/S39handai-bluetooth-radio \
@@ -143,6 +145,20 @@ grep -q 'HANDAI NEXUS' "$TMP/rootfs/opt/handai/handai/pixelgui.py" || {
 }
 grep -q 'GUI_READY' "$TMP/rootfs/opt/handai/handai/pixelgui.py" || {
 	echo "GUI-ready runtime marker is missing" >&2
+	exit 1
+}
+grep -q 'def _ensure_control' "$TMP/rootfs/opt/handai/handai/network.py" || {
+	echo "WiFi boot-race recovery is missing" >&2
+	exit 1
+}
+grep -q '"command": \["codex", "cloud"\]' \
+	"$TMP/rootfs/etc/handai/handai.json" || {
+	echo "current Codex Cloud command is missing" >&2
+	exit 1
+}
+grep -q '"label": "GITHUB.COM COPILOT"' \
+	"$TMP/rootfs/etc/handai/handai.json" || {
+	echo "headless GitHub Copilot login profile is missing" >&2
 	exit 1
 }
 grep -q 'HARDWARE SELF TEST' "$TMP/rootfs/usr/sbin/handai-boot-log" || {
