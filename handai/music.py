@@ -27,6 +27,9 @@ class Track:
 
 
 ALBUM_TITLE = "HANDAI CHIPTUNE SELECT"
+ALBUM_ARTIST = "ZANE LITTLE MUSIC"
+ALBUM_LICENSE = "CC0 / PUBLIC DOMAIN"
+ALBUM_SOURCE = "OPENGAMEART.ORG"
 TRACKS = (
     Track("main", "Flowerbed Fields", "MAIN MENU", "01-pocket-signal.wav"),
     Track("claude", "Apple Cider", "CLAUDE", "02-copper-constellation.wav"),

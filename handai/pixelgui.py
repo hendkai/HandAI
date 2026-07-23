@@ -813,9 +813,9 @@ class PixelCockpit:
                     f"MUSIC VOLUME: {level}%",
                     f"NOW PLAYING: {current.title}",
                     "ALBUM / CHOOSE TRACK",
-                    "ABOUT THE SOUNDTRACK",
+                    f"BY {music.ALBUM_ARTIST} / CC0",
                     "BACK",
-                ],subtitle=music.ALBUM_TITLE)
+                ],subtitle=f"{music.ALBUM_ARTIST} / CC0")
                 if act in (None,"BACK"):return
                 if act.startswith("MUSIC:"):
                     music.save_settings(not on,level);self.music.refresh()
@@ -823,14 +823,15 @@ class PixelCockpit:
                 elif act=="ALBUM / CHOOSE TRACK":
                     track=self.pick(music.ALBUM_TITLE,music.TRACKS,
                                     lambda t:f"{t.title} [{t.screen}]",
-                                    subtitle="6 CURATED CC0 OFFLINE CHIPTUNE THEMES")
+                                    subtitle=f"ALL MUSIC BY {music.ALBUM_ARTIST} / CC0")
                     if track:self.music.play(track.id);self.status=f"NOW PLAYING: {track.title}"
-                elif act=="ABOUT THE SOUNDTRACK":
-                    self.toast(music.ALBUM_TITLE,[
-                        "6 FULL-LENGTH CC0 CHIPTUNE TRACKS.",
-                        "COMPOSED BY ZANE LITTLE MUSIC.",
+                elif act.startswith("BY "):
+                    self.toast("MUSIC CREDITS",[
+                        f"COMPOSER: {music.ALBUM_ARTIST}",
+                        f"LICENSE: {music.ALBUM_LICENSE}",
+                        f"SOURCE: {music.ALBUM_SOURCE}",
                         "PROVIDER HOMES SWITCH THEMES AUTOMATICALLY.",
-                        "SOURCE AND LICENSE ARE INCLUDED OFFLINE.",
+                        "FULL SOURCE LIST IS INCLUDED WITH HANDAI.",
                     ])
         finally:self.music.play(previous)
 

@@ -612,6 +612,8 @@ class TestVoiceInput(unittest.TestCase):
 
 class TestChiptuneAlbum(unittest.TestCase):
     def test_album_has_menu_and_every_provider_theme(self):
+        self.assertEqual(music.ALBUM_ARTIST,"ZANE LITTLE MUSIC")
+        self.assertEqual(music.ALBUM_LICENSE,"CC0 / PUBLIC DOMAIN")
         self.assertEqual([track.id for track in music.TRACKS],
                          ["main","claude","codex","hermes","opencode","openclaw"])
         self.assertEqual(music.theme_for_provider("claude-remote"),"claude")
