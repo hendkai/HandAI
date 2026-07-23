@@ -23,11 +23,8 @@ start() {
 		done
 	fi
 	mkdir -p /data/handai /data/handai/home/.config
-	# The H700 BSP exposes its display through the proprietary Mali fbdev path.
-	# Load that module before SDL so a failure is diagnosable instead of black.
-	if [ -f /lib/modules/mali_kbase.ko ] && [ ! -e /dev/mali0 ]; then
-		insmod /lib/modules/mali_kbase.ko >>/data/handai/cockpit.log 2>&1 || true
-	fi
+	env $DAEMON_ENV /usr/bin/python3 -m handai.bootdiag \
+		--progress 82 "STARTING NETWORK" >>/data/handai/cockpit.log 2>&1 || true
 	# Tailscale keeps node identity on the persistent data partition. Buildroot's
 	# package has no BusyBox/SysV service, so start the daemon here after /data is
 	# mounted. Login itself is initiated from the cockpit and completed by phone.
@@ -41,18 +38,19 @@ start() {
 	echo "[handai] boot ok — starting cockpit on $HANDAI_TTY"
 	# bring up WiFi in the background (non-fatal if no adapter yet)
 	/opt/handai/net/up.sh >/data/handai/net.log 2>&1 &
+	env $DAEMON_ENV /usr/bin/python3 -m handai.bootdiag \
+		--progress 96 "STARTING GUI" >>/data/handai/cockpit.log 2>&1 || true
 
 	# run the cockpit on tty1, respawn forever
 	(
-		env $DAEMON_ENV /usr/bin/python3 -m handai.bootdiag \
-			"STARTING HANDAI" >>/data/handai/cockpit.log 2>&1 || true
 		while true; do
 			env $DAEMON_ENV \
 				/usr/bin/python3 -m handai <"$HANDAI_TTY" \
 				>>/data/handai/cockpit.log 2>&1
 			status=$?
 			env $DAEMON_ENV /usr/bin/python3 -m handai.bootdiag \
-				"GUI FAILED - CODE $status" >>/data/handai/cockpit.log 2>&1 || true
+				--progress 96 --error "GUI FAILED - CODE $status" \
+				>>/data/handai/cockpit.log 2>&1 || true
 			sleep 1
 		done
 	) &

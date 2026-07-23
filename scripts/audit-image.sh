@@ -52,6 +52,7 @@ for path in \
 	opt/handai/handai/power.py \
 	usr/bin/handai \
 	usr/bin/handai-hardware-report \
+	etc/init.d/S05handai-boot \
 	etc/init.d/S99handai \
 	etc/init.d/S45handai-audio \
 	usr/bin/python3 \

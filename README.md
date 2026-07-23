@@ -140,6 +140,9 @@ python -m handai --ui pixel
   gebrandetes mainline SPL/U-Boot 2025.10 samt Trusted Firmware-A und Bootskript.
   Das Ergebnis liegt bewusst in einem separaten `upstream-uboot-experimental`
   Image, bis der Kaltstart auf echter RG35XXSP-Hardware bestätigt ist.
+- ✅ **Nachvollziehbarer Bootfortschritt**: Ein segmentierter Pixelbalken zeigt
+  die real erreichten Phasen Bootloader, Kernel, Dateisystem, Treiber, Netzwerk
+  und GUI. Bei einem Fehler bleibt die betroffene Phase auf dem Display stehen.
 - ✅ **SDL2/DRM-Pixel-Art-Frontend**: natives 640×480-Dashboard, Bitmap-Schrift,
   Gamepad-Navigation, Bildschirmtastatur und zehn dauerhaft wählbare Farb-Skins;
   curses bleibt als serieller/QEMU-Fallback.

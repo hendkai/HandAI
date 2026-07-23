@@ -53,6 +53,13 @@ class TestFramebufferBootDiagnostic(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unsupported framebuffer depth"):
             bootdiag._pixel((0, 0, 0), 24)
 
+    def test_progress_width_is_clamped(self):
+        self.assertEqual(bootdiag._progress_width(552, -1), 0)
+        self.assertEqual(bootdiag._progress_width(552, 50), 276)
+        self.assertEqual(bootdiag._progress_width(552, 101), 552)
+        self.assertEqual(bootdiag.BOOT_STAGES[bootdiag._stage_index(62)], "DRIVERS")
+        self.assertEqual(bootdiag.BOOT_STAGES[bootdiag._stage_index(96)], "GUI")
+
 
 LOCAL = Mode(id="local", label="Local", transport="local", default_workdir="~/work")
 DEVBOX = Mode(id="devbox", label="Devbox", transport="ssh", host="dev@box",

@@ -103,6 +103,22 @@ def main() -> int:
     rect(322, 18, 4, 101, pink)
     text(40, 35, "HANDAI", yellow, 6)
     text(42, 84, "REMOTE AI COCKPIT", cyan, 2)
+
+    # Static first stage. Once Linux userspace starts, handai.bootdiag replaces
+    # this with live milestone updates from the init scripts.
+    for y in range(403, 472):
+        for x in range(22, 618):
+            current = read_pixel(x, y)
+            pixel(
+                x,
+                y,
+                tuple((channel + base * 3) // 4 for channel, base in zip(current, panel)),
+            )
+    text(40, 414, "1/6 BOOTLOADER", cyan, 2)
+    rect(40, 447, 560, 20, (144, 161, 184))
+    rect(44, 451, 552, 12, (15, 27, 49))
+    rect(44, 451, 77, 12, cyan)
+    rect(116, 451, 5, 12, pink)
     destination.write_bytes(data)
     return 0
 

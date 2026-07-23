@@ -5,8 +5,13 @@ RUNTIME=/run/handai-audio
 LOG=/data/handai/audio.log
 
 start() {
+	PYTHONPATH=/opt/handai /usr/bin/python3 -m handai.bootdiag \
+		--progress 62 "LOADING DRIVERS" >/dev/null 2>&1 || true
 	mkdir -p "$RUNTIME" /data/handai
 	chmod 0700 "$RUNTIME"
+	if [ -f /lib/modules/mali_kbase.ko ] && [ ! -e /dev/mali0 ]; then
+		insmod /lib/modules/mali_kbase.ko >>"$LOG" 2>&1 || true
+	fi
 	if command -v pipewire >/dev/null 2>&1 && ! pidof pipewire >/dev/null 2>&1; then
 		XDG_RUNTIME_DIR="$RUNTIME" PIPEWIRE_RUNTIME_DIR="$RUNTIME" \
 			pipewire >>"$LOG" 2>&1 &
@@ -16,6 +21,8 @@ start() {
 		XDG_RUNTIME_DIR="$RUNTIME" PIPEWIRE_RUNTIME_DIR="$RUNTIME" \
 			wireplumber >>"$LOG" 2>&1 &
 	fi
+	PYTHONPATH=/opt/handai /usr/bin/python3 -m handai.bootdiag \
+		--progress 72 "DRIVERS READY" >/dev/null 2>&1 || true
 }
 
 stop() {

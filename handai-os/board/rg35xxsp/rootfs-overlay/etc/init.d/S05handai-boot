@@ -1,0 +1,16 @@
+#!/bin/sh
+# The existence of this userspace script proves that the kernel and HandAI
+# SquashFS have mounted successfully. Show both verified milestones early.
+
+progress() {
+	PYTHONPATH=/opt/handai /usr/bin/python3 -m handai.bootdiag \
+		--progress "$1" "$2" >/dev/null 2>&1 || true
+}
+
+case "$1" in
+	start)
+		progress 28 "KERNEL READY"
+		progress 44 "FILESYSTEM READY"
+		;;
+esac
+

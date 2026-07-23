@@ -7,14 +7,16 @@ screen. The H700 BSP exposes a 640x480 RGB565 or BGRA8888 framebuffer.
 
 from __future__ import annotations
 
+import argparse
 import mmap
 import struct
-import sys
 
 from .pixelgui import _FONT
 
 
 FBIOGET_VSCREENINFO = 0x4600
+BOOT_STAGES = ("BOOTLOADER", "KERNEL", "FILESYSTEM", "DRIVERS", "NETWORK", "GUI")
+BOOT_STAGE_THRESHOLDS = (0, 20, 35, 55, 75, 90)
 
 
 def _pixel(color: tuple[int, int, int], bits: int) -> bytes:
@@ -27,7 +29,26 @@ def _pixel(color: tuple[int, int, int], bits: int) -> bytes:
     raise ValueError(f"unsupported framebuffer depth: {bits}")
 
 
-def show(message: str, device: str = "/dev/fb0") -> None:
+def _progress_width(total: int, progress: int) -> int:
+    return total * max(0, min(100, progress)) // 100
+
+
+def _stage_index(progress: int) -> int:
+    progress = max(0, min(100, progress))
+    return max(
+        index
+        for index, threshold in enumerate(BOOT_STAGE_THRESHOLDS)
+        if progress >= threshold
+    )
+
+
+def show(
+    message: str,
+    device: str = "/dev/fb0",
+    *,
+    progress: int = 0,
+    error: bool = False,
+) -> None:
     import fcntl
 
     with open(device, "r+b", buffering=0) as framebuffer:
@@ -66,6 +87,7 @@ def show(message: str, device: str = "/dev/fb0") -> None:
             pink = (255, 94, 164)
             yellow = (255, 210, 74)
             muted = (144, 161, 184)
+            red = (255, 72, 82)
             rect(0, 0, width, 8, cyan)
             rect(0, height - 8, width, 8, pink)
             rect(42, 52, 62, 62, cyan)
@@ -74,15 +96,42 @@ def show(message: str, device: str = "/dev/fb0") -> None:
             rect(78, 75, 8, 8, yellow)
             text(126, 55, "HANDAI", yellow, 5)
             text(128, 99, "PIXEL COCKPIT", cyan, 2)
-            text(48, 204, message[:35], yellow, 3)
-            text(48, 258, "BOOT LOG: /DATA/HANDAI/COCKPIT.LOG", muted, 1)
-            text(48, 286, "POWER OFF, REMOVE SD, REPORT THIS SCREEN", muted, 1)
+            text(48, 190, message[:35], red if error else yellow, 3)
+            text(48, 250, "BOOT LOG: /DATA/HANDAI/COCKPIT.LOG", muted, 1)
+
+            bar_x, bar_y, bar_w, bar_h = 48, 326, width - 96, 32
+            rect(bar_x, bar_y, bar_w, bar_h, muted)
+            rect(bar_x + 3, bar_y + 3, bar_w - 6, bar_h - 6, (15, 27, 49))
+            fill = _progress_width(bar_w - 6, progress)
+            if fill:
+                rect(bar_x + 3, bar_y + 3, fill, bar_h - 6, red if error else cyan)
+                rect(bar_x + max(3, fill - 5), bar_y + 3, min(5, fill), bar_h - 6, pink)
+
+            stage_index = _stage_index(progress)
+            text(
+                48,
+                377,
+                f"{stage_index + 1}/6 {BOOT_STAGES[stage_index]}  {progress:02d}%",
+                red if error else cyan,
+                2,
+            )
+            if error:
+                text(48, 417, "POWER OFF AND REPORT THIS SCREEN", muted, 1)
             screen.flush()
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description="HandAI framebuffer boot progress")
+    parser.add_argument("message", nargs="*", default=["STARTING", "HANDAI"])
+    parser.add_argument("--progress", type=int, default=0)
+    parser.add_argument("--error", action="store_true")
+    arguments = parser.parse_args()
     try:
-        show(" ".join(sys.argv[1:]) or "STARTING HANDAI")
+        show(
+            " ".join(arguments.message),
+            progress=arguments.progress,
+            error=arguments.error,
+        )
         return 0
     except (OSError, ValueError) as exc:
         print(f"framebuffer diagnostic unavailable: {exc}", file=sys.stderr)
