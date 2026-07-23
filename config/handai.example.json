@@ -35,8 +35,8 @@
     },
     {
       "id": "codex-remote",
-      "label": "Codex (remote/cloud)",
-      "command": ["codex", "--cloud"],
+      "label": "Codex Cloud",
+      "command": ["codex", "cloud"],
       "auth": "oauth-device",
       "auth_methods": ["oauth-device"],
       "login_command": ["codex", "login", "--device-auth"],

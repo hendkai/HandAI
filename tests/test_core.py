@@ -151,6 +151,28 @@ class TestProviders(unittest.TestCase):
         self.assertEqual(len(opencode.oauth_profiles),3)
         self.assertTrue(any("headless" in " ".join(profile.command).lower()
                             for profile in opencode.oauth_profiles))
+        self.assertEqual(cfg.provider("codex-remote").command,["codex","cloud"])
+        self.assertEqual(
+            [profile.command for profile in opencode.oauth_profiles],
+            [
+                ["opencode","auth","login","-p","openai","-m",
+                 "ChatGPT Pro/Plus (headless)"],
+                ["opencode","auth","login","-p","xai","-m",
+                 "xAI Grok OAuth (Headless / Remote / VPS)"],
+                ["opencode","auth","login","-p","github-copilot","-m",
+                 "Login with GitHub Copilot"],
+            ],
+        )
+
+    def test_device_and_example_provider_configs_stay_in_sync(self):
+        root=Path(__file__).parents[1]
+        example=json.loads((root/"config"/"handai.example.json").read_text("utf-8"))
+        device=json.loads((
+            root/"handai-os"/"board"/"rg35xxsp"/"rootfs-overlay"/"etc"/
+            "handai"/"handai.json"
+        ).read_text("utf-8"))
+        self.assertEqual(device["providers"],example["providers"])
+        self.assertEqual(device["modes"],example["modes"])
 
 
 class TestPixelGuiPure(unittest.TestCase):
