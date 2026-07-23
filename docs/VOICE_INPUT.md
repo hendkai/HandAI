@@ -15,6 +15,23 @@ Open **Voice Input -> Input Source** after connecting a headset. A Bluetooth
 source normally appears with the headset name. Pairing and reconnecting are
 available under **Voice Input -> Bluetooth Headsets**.
 
+## Audio Center and microphone tests
+
+Open **Settings -> Audio / Mic Test** to:
+
+- choose the speaker, wired headphone or Bluetooth output;
+- adjust output volume and microphone input level, including mute;
+- play a generated speaker/headphone test tone;
+- record a real microphone test and inspect average level, peak level,
+  silence and clipping;
+- play the microphone recording back or test it with local speech recognition;
+- replay the generated `speaker-test.wav` and `mic-test.wav` test files.
+
+The microphone test deliberately works without the Whisper model. This makes
+it useful for diagnosing capture hardware, Bluetooth profiles and gain before
+testing speech recognition. Bluetooth microphones require HFP/HSP; A2DP alone
+still provides playback only.
+
 ## Local model
 
 The multilingual `tiny-q5_1` whisper.cpp model is about 31 MB and supports

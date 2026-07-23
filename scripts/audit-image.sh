@@ -52,7 +52,9 @@ for path in \
 	usr/sbin/tailscaled \
 	usr/bin/qrencode \
 	usr/bin/arecord \
+	usr/bin/amixer \
 	usr/bin/pw-record \
+	usr/bin/wpctl \
 	usr/bin/wireplumber \
 	usr/bin/bluetoothctl \
 	usr/bin/whisper-cli \

@@ -7,8 +7,10 @@ from __future__ import annotations
 
 import json
 import os
+import struct
 import tempfile
 import unittest
+import wave
 from pathlib import Path
 from unittest.mock import patch
 
@@ -544,6 +546,42 @@ class TestVoiceInput(unittest.TestCase):
         raw="null\n    Discard all samples\ndefault\n    Default\nhw:CARD=USB,DEV=0\n    USB mic\nplughw:CARD=USB,DEV=0\n"
         got=audio.parse_arecord_list(raw)
         self.assertEqual([x.id for x in got],["default","hw:CARD=USB,DEV=0","plughw:CARD=USB,DEV=0"])
+
+    def test_pipewire_sinks_parse_output_nodes(self):
+        raw=json.dumps([
+            {"id":77,"info":{"props":{"media.class":"Audio/Sink","node.name":"bluez_output.aa",
+                                     "node.description":"Sofa Headphones"}}},
+            {"id":78,"info":{"props":{"media.class":"Audio/Source","node.name":"bluez_input.aa"}}},
+        ])
+        self.assertEqual(audio.parse_pipewire_sinks(raw),[
+            audio.AudioSink("77","Sofa Headphones","pipewire")
+        ])
+
+    def test_volume_parsers_include_mute_state(self):
+        self.assertEqual(audio.parse_wpctl_volume("Volume: 0.42 [MUTED]"),
+                         audio.VolumeState(42,True,"pipewire"))
+        self.assertEqual(audio.parse_amixer_volume("Front Left: 37 [58%] [-20dB] [on]"),
+                         audio.VolumeState(58,False,"alsa"))
+
+    def test_generated_tone_has_measurable_signal(self):
+        with tempfile.TemporaryDirectory() as d:
+            target=audio.make_test_tone(Path(d)/"tone.wav",duration=0.2)
+            signal=audio.analyze_wav(target)
+            self.assertAlmostEqual(signal.duration,0.2,places=1)
+            self.assertGreater(signal.rms_percent,1)
+            self.assertFalse(signal.silent)
+            self.assertFalse(signal.clipped)
+
+    def test_signal_analysis_detects_silence_and_clipping(self):
+        with tempfile.TemporaryDirectory() as d:
+            for name,sample in (("silent",0),("clipped",32767)):
+                target=Path(d)/f"{name}.wav"
+                with wave.open(str(target),"wb") as wav_file:
+                    wav_file.setnchannels(1);wav_file.setsampwidth(2);wav_file.setframerate(16000)
+                    wav_file.writeframes(struct.pack("<h",sample)*1600)
+                signal=audio.analyze_wav(target)
+                self.assertEqual(signal.silent,name=="silent")
+                self.assertEqual(signal.clipped,name=="clipped")
 
     def test_record_commands_are_argument_safe(self):
         wav=Path("prompt.wav")

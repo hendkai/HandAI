@@ -10,12 +10,16 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
+import re
 import shutil
+import struct
 import subprocess
 import tempfile
 import urllib.error
 import urllib.request
+import wave
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -37,6 +41,29 @@ class BluetoothDevice:
     address: str
     label: str
     connected: bool = False
+
+
+@dataclass(frozen=True)
+class AudioSink:
+    id: str
+    label: str
+    backend: str
+
+
+@dataclass(frozen=True)
+class VolumeState:
+    percent: int
+    muted: bool
+    backend: str
+
+
+@dataclass(frozen=True)
+class SignalTest:
+    duration: float
+    rms_percent: int
+    peak_percent: int
+    clipped: bool
+    silent: bool
 
 
 def state_dir() -> Path:
@@ -70,6 +97,25 @@ def parse_pipewire_dump(text: str) -> list[AudioSource]:
             continue
         label = str(props.get("node.description") or props.get("device.description") or source_id)
         found.append(AudioSource(source_id, label, "pipewire"))
+    return found
+
+
+def parse_pipewire_sinks(text: str) -> list[AudioSink]:
+    try:
+        objects = json.loads(text)
+    except (ValueError, TypeError):
+        return []
+    found: list[AudioSink] = []
+    for obj in objects if isinstance(objects, list) else []:
+        props = ((obj.get("info") or {}).get("props") or {})
+        if props.get("media.class") != "Audio/Sink":
+            continue
+        sink_id = str(obj.get("id") or props.get("object.serial") or "")
+        if not sink_id:
+            continue
+        label = str(props.get("node.description") or props.get("device.description") or
+                    props.get("node.name") or sink_id)
+        found.append(AudioSink(sink_id, label, "pipewire"))
     return found
 
 
@@ -107,6 +153,20 @@ def list_sources() -> list[AudioSource]:
     return list(unique.values())
 
 
+def list_sinks() -> list[AudioSink]:
+    sinks: list[AudioSink] = []
+    if shutil.which("pw-dump"):
+        result = _run(["pw-dump"])
+        if result and result.returncode == 0:
+            sinks.extend(parse_pipewire_sinks(result.stdout))
+    if not sinks and shutil.which("aplay"):
+        result = _run(["aplay", "-L"])
+        if result and result.returncode == 0:
+            for source in parse_arecord_list(result.stdout):
+                sinks.append(AudioSink(source.id, source.label, "alsa"))
+    return sinks
+
+
 def selected_source(sources: list[AudioSource] | None = None) -> AudioSource | None:
     choices = sources if sources is not None else list_sources()
     saved = preferences.load().get("voice_source")
@@ -119,6 +179,87 @@ def save_source(source: AudioSource) -> None:
     data = preferences.load()
     data["voice_source"] = f"{source.backend}:{source.id}"
     preferences.save(data)
+
+
+def selected_sink(sinks: list[AudioSink] | None = None) -> AudioSink | None:
+    choices = sinks if sinks is not None else list_sinks()
+    saved = preferences.load().get("audio_sink")
+    return next((item for item in choices if f"{item.backend}:{item.id}" == saved), None) or (
+        choices[0] if choices else None
+    )
+
+
+def save_sink(sink: AudioSink) -> tuple[bool, str]:
+    if sink.backend == "pipewire" and shutil.which("wpctl"):
+        result = _run(["wpctl", "set-default", sink.id])
+        if not result or result.returncode != 0:
+            return False, ((result.stderr or result.stdout).strip() if result else "SET DEFAULT FAILED")
+    data = preferences.load()
+    data["audio_sink"] = f"{sink.backend}:{sink.id}"
+    preferences.save(data)
+    return True, f"OUTPUT: {sink.label}"
+
+
+def parse_wpctl_volume(text: str) -> VolumeState | None:
+    match = re.search(r"Volume:\s*([0-9]+(?:\.[0-9]+)?)", str(text))
+    if not match:
+        return None
+    return VolumeState(max(0, min(150, round(float(match.group(1)) * 100))),
+                       "[MUTED]" in str(text).upper(), "pipewire")
+
+
+def parse_amixer_volume(text: str) -> VolumeState | None:
+    matches = re.findall(r"\[(\d{1,3})%\][^\r\n]*?\[(on|off)\]", str(text), re.IGNORECASE)
+    if not matches:
+        return None
+    percent, state = matches[-1]
+    return VolumeState(max(0, min(100, int(percent))), state.lower() == "off", "alsa")
+
+
+def get_volume(kind: str, source: AudioSource | None = None,
+               sink: AudioSink | None = None) -> VolumeState:
+    is_input = kind == "input"
+    selected_backend = source.backend if is_input and source else sink.backend if sink else None
+    if shutil.which("wpctl") and selected_backend != "alsa":
+        target = (source.id if is_input and source and source.backend == "pipewire"
+                  else sink.id if not is_input and sink and sink.backend == "pipewire"
+                  else "@DEFAULT_AUDIO_SOURCE@" if is_input else "@DEFAULT_AUDIO_SINK@")
+        result = _run(["wpctl", "get-volume", target])
+        parsed = parse_wpctl_volume(result.stdout if result and result.returncode == 0 else "")
+        if parsed:
+            return parsed
+    if shutil.which("amixer"):
+        control = "Capture" if is_input else "Master"
+        result = _run(["amixer", "get", control])
+        parsed = parse_amixer_volume(result.stdout if result and result.returncode == 0 else "")
+        if parsed:
+            return parsed
+    return VolumeState(100, False, "unavailable")
+
+
+def set_volume(kind: str, percent: int, muted: bool = False,
+               source: AudioSource | None = None, sink: AudioSink | None = None) -> tuple[bool, str]:
+    value = max(0, min(150 if kind == "output" else 100, int(percent)))
+    is_input = kind == "input"
+    selected_backend = source.backend if is_input and source else sink.backend if sink else None
+    if shutil.which("wpctl") and selected_backend != "alsa":
+        target = (source.id if is_input and source and source.backend == "pipewire"
+                  else sink.id if not is_input and sink and sink.backend == "pipewire"
+                  else "@DEFAULT_AUDIO_SOURCE@" if is_input else "@DEFAULT_AUDIO_SINK@")
+        volume = _run(["wpctl", "set-volume", target, f"{value}%"])
+        mute = _run(["wpctl", "set-mute", target, "1" if muted else "0"])
+        if volume and mute and volume.returncode == 0 and mute.returncode == 0:
+            return True, f"{'MIC' if is_input else 'OUTPUT'} {value}%"
+        detail = ((volume.stderr if volume else "") or (mute.stderr if mute else "")).strip()
+        return False, detail or "VOLUME CHANGE FAILED"
+    if shutil.which("amixer"):
+        control = "Capture" if is_input else "Master"
+        result = _run(["amixer", "sset", control, f"{value}%", "cap" if is_input and not muted
+                       else "nocap" if is_input else "unmute" if not muted else "mute"])
+        if result and result.returncode == 0:
+            return True, f"{'MIC' if is_input else 'OUTPUT'} {value}%"
+        return False, ((result.stderr or result.stdout).strip() if result else "VOLUME CHANGE FAILED")
+    return False, "NO AUDIO MIXER FOUND"
 
 
 def record_argv(source: AudioSource, target: Path) -> list[str]:
@@ -150,6 +291,66 @@ def stop_recording(process: subprocess.Popen[bytes], timeout: float = 3.0) -> tu
     message = (stderr or b"").decode("utf-8", "replace").strip()
     # SIGTERM is the normal end of an open-ended arecord/pw-record capture.
     return (process.returncode in (0, -15, 1), message)
+
+
+def analyze_wav(path: Path) -> SignalTest:
+    with wave.open(str(path), "rb") as wav:
+        channels = wav.getnchannels()
+        width = wav.getsampwidth()
+        rate = wav.getframerate()
+        frames = wav.getnframes()
+        if width != 2 or channels < 1 or rate <= 0:
+            raise ValueError("MIC TEST EXPECTS 16-BIT PCM")
+        raw = wav.readframes(frames)
+    count = len(raw) // 2
+    if not count:
+        return SignalTest(0.0, 0, 0, False, True)
+    values = (sample[0] for sample in struct.iter_unpack("<h", raw))
+    sum_squares = 0
+    peak = 0
+    for value in values:
+        absolute = abs(value)
+        peak = max(peak, absolute)
+        sum_squares += value * value
+    rms = math.sqrt(sum_squares / count)
+    rms_percent = min(100, round(rms / 32767 * 100))
+    peak_percent = min(100, round(peak / 32767 * 100))
+    return SignalTest(frames / rate, rms_percent, peak_percent,
+                      peak_percent >= 98, rms_percent < 1)
+
+
+def make_test_tone(path: Path | None = None, frequency: int = 660,
+                   duration: float = 0.7) -> Path:
+    target = path or state_dir() / "speaker-test.wav"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    rate = 16000
+    frames = int(rate * duration)
+    with wave.open(str(target), "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(rate)
+        samples = (int(10000 * math.sin(2 * math.pi * frequency * i / rate))
+                   for i in range(frames))
+        wav.writeframes(b"".join(struct.pack("<h", sample) for sample in samples))
+    return target
+
+
+def play_audio(path: Path, sink: AudioSink | None = None, timeout: float = 20.0) -> tuple[bool, str]:
+    if sink and sink.backend == "pipewire" and shutil.which("pw-play"):
+        argv = ["pw-play", f"--target={sink.id}", str(path)]
+    elif shutil.which("pw-play"):
+        argv = ["pw-play", str(path)]
+    elif shutil.which("aplay"):
+        argv = ["aplay", "-q"]
+        if sink and sink.backend == "alsa":
+            argv.extend(["-D", sink.id])
+        argv.append(str(path))
+    else:
+        return False, "NO AUDIO PLAYER FOUND"
+    result = _run(argv, timeout)
+    if not result or result.returncode != 0:
+        return False, ((result.stderr or result.stdout).strip() if result else "PLAYBACK FAILED")
+    return True, "PLAYBACK COMPLETE"
 
 
 def whisper_available() -> bool:

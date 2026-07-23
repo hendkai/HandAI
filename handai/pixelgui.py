@@ -147,6 +147,7 @@ _FONT = {
  "(":("00010","00100","01000","01000","01000","00100","00010"),")":("01000","00100","00010","00010","00010","00100","01000"),
  "=":("00000","11111","00000","11111","00000","00000","00000"),"@":("01110","10001","10111","10101","10111","10000","01110"),
  "#":("01010","11111","01010","01010","11111","01010","00000"),"'":("00100","00100","00000","00000","00000","00000","00000"),
+ "%":("11001","11010","00100","00100","01000","10110","00110"),
  "<":("00010","00100","01000","10000","01000","00100","00010"),">":("01000","00100","00010","00001","00010","00100","01000"),
 }
 
@@ -643,6 +644,133 @@ class PixelCockpit:
         source=self.pick("MICROPHONE",sources,lambda x:f"{x.label} [{x.backend.upper()}]",subtitle="PIPEWIRE SOURCES INCLUDE BLUETOOTH HFP")
         if source:audio.save_source(source);self.status=f"MICROPHONE: {source.label}"
 
+    def choose_audio_sink(self,sinks):
+        if not sinks:
+            self.toast("NO AUDIO OUTPUT FOUND",["CONNECT HEADPHONES OR PAIR A BLUETOOTH HEADSET.","THEN OPEN OUTPUT DEVICE AGAIN."]);return
+        sink=self.pick("OUTPUT DEVICE",sinks,lambda x:f"{x.label} [{x.backend.upper()}]",
+                       subtitle="SPEAKER / WIRED / BLUETOOTH HEADPHONES")
+        if sink:
+            ok,msg=audio.save_sink(sink);self.status=msg
+            if not ok:self.toast("OUTPUT CHANGE FAILED",[msg])
+
+    def adjust_audio_level(self,kind,source=None,sink=None):
+        state=audio.get_volume(kind,source,sink)
+        title="MIC INPUT LEVEL" if kind=="input" else "OUTPUT VOLUME"
+        maximum=100 if kind=="input" else 150
+        percent=state.percent;muted=state.muted
+        while True:
+            u=self.ui;self.chrome(title,f"{state.backend.upper()} MIXER - {'MUTED' if muted else 'ACTIVE'}")
+            u.frame(54,137,532,150,u.CYAN,4)
+            u.text(88,163,f"{percent:3d}%",u.YELLOW,5,max_chars=5)
+            u.rect(88,232,464,28,u.PANEL2)
+            width=round(464*min(percent,100)/100)
+            if width:u.rect(88,232,width,28,u.PINK if percent>90 else u.GREEN)
+            if maximum>100:
+                u.text(88,277,"BOOST RANGE: 101-150%",u.MUTED,1,max_chars=35)
+            u.text(89,315,"MUTED" if muted else "SOUND ON",u.PINK if muted else u.GREEN,3,max_chars=18)
+            self.footer("LEFT/RIGHT 5%  UP/DOWN 10%  A MUTE  B SAVE");u.present()
+            event=u.event()
+            if event in ("b","cancel","quit"):return
+            if event=="left":percent=max(0,percent-5)
+            elif event=="right":percent=min(maximum,percent+5)
+            elif event=="down":percent=max(0,percent-10)
+            elif event=="up":percent=min(maximum,percent+10)
+            elif event in ("a","done"):muted=not muted
+            else:continue
+            ok,msg=audio.set_volume(kind,percent,muted,source,sink)
+            if not ok:self.toast("VOLUME CHANGE FAILED",[msg]);return
+            state=audio.VolumeState(percent,muted,state.backend)
+
+    def speaker_test(self,sink):
+        self.draw_busy("PLAYING SPEAKER / HEADPHONE TONE")
+        try:tone=audio.make_test_tone()
+        except (OSError,ValueError) as e:self.toast(f"TEST FILE FAILED: {e}");return
+        ok,msg=audio.play_audio(tone,sink)
+        self.toast("OUTPUT TEST COMPLETE" if ok else "OUTPUT TEST FAILED",
+                   [msg,f"DEVICE: {sink.label if sink else 'SYSTEM DEFAULT'}",f"FILE: {tone}"])
+
+    def microphone_test(self,source):
+        if not source:
+            self.toast("NO MICROPHONE SELECTED",["SELECT A MICROPHONE OR PAIR A BLUETOOTH HFP HEADSET."]);return
+        wav=audio.state_dir()/"mic-test.wav"
+        try:process=audio.start_recording(source,wav)
+        except OSError as e:self.toast(f"MICROPHONE START FAILED: {e}");return
+        u=self.ui;self.chrome("MICROPHONE TEST",source.label[:78]);u.frame(42,115,556,235,u.PINK,5)
+        u.text(134,145,"SPEAK NOW",u.YELLOW,4,max_chars=20)
+        for i,height in enumerate((22,52,96,38,120,68,30,106,56,86,42,112,62,28,76,98)):
+            x=70+i*31;u.rect(x,255-height//2,15,height,u.CYAN if i%2 else u.GREEN)
+        u.text(102,326,"SAY A FULL TEST SENTENCE",u.INK,2,max_chars=34)
+        self.footer("A / B / START  FINISH RECORDING");u.present()
+        while u.event() not in ("a","b","done","cancel","quit"):pass
+        ok,msg=audio.stop_recording(process)
+        if not ok or not wav.exists() or wav.stat().st_size<=44:
+            self.toast("MICROPHONE RECORDING FAILED",[msg or "NO AUDIO DATA RECEIVED"]);return
+        try:signal=audio.analyze_wav(wav)
+        except (OSError,ValueError) as e:self.toast(f"MIC TEST FILE INVALID: {e}");return
+        while True:
+            if signal.silent:quality="SILENT - CHECK MIC / MUTE / PROFILE"
+            elif signal.clipped:quality="CLIPPING - LOWER MIC INPUT LEVEL"
+            elif signal.rms_percent<3:quality="VERY QUIET - RAISE MIC INPUT LEVEL"
+            else:quality="SIGNAL DETECTED"
+            action=self.pick("MIC TEST RESULT",[
+                f"STATUS: {quality}",
+                f"AVERAGE LEVEL: {signal.rms_percent}%",
+                f"PEAK LEVEL: {signal.peak_percent}%",
+                f"DURATION: {signal.duration:.1f} SECONDS",
+                "PLAY RECORDING",
+                "TEST SPEECH RECOGNITION",
+                "RECORD AGAIN",
+                "BACK",
+            ],subtitle=f"RECORDED FILE: {wav.name}")
+            if action in (None,"BACK"):return
+            if action=="PLAY RECORDING":
+                sink=audio.selected_sink();self.draw_busy("PLAYING MIC RECORDING")
+                played,detail=audio.play_audio(wav,sink)
+                self.toast("MIC PLAYBACK COMPLETE" if played else "MIC PLAYBACK FAILED",[detail])
+            elif action=="TEST SPEECH RECOGNITION":
+                if not audio.whisper_available() or not audio.model_path().exists():
+                    self.toast("LOCAL VOICE MODEL NOT READY",["INSTALL IT UNDER VOICE INPUT.","THE LEVEL TEST AND PLAYBACK STILL WORK WITHOUT IT."]);continue
+                self.draw_busy("TESTING SPEECH RECOGNITION")
+                recognized,text=audio.transcribe(wav)
+                self.toast("SPEECH RECOGNIZED" if recognized else "NO SPEECH RECOGNIZED",[text])
+            elif action=="RECORD AGAIN":
+                self.microphone_test(source);return
+
+    def audio_settings(self):
+        while True:
+            sources=audio.list_sources();source=audio.selected_source(sources)
+            sinks=audio.list_sinks();sink=audio.selected_sink(sinks)
+            output=audio.get_volume("output",sink=sink)
+            mic=audio.get_volume("input",source=source)
+            acts=[
+                f"OUTPUT DEVICE: {sink.label if sink else 'SYSTEM DEFAULT'}",
+                f"OUTPUT VOLUME: {output.percent}%{' MUTED' if output.muted else ''}",
+                f"MICROPHONE: {source.label if source else 'NONE'}",
+                f"MIC INPUT LEVEL: {mic.percent}%{' MUTED' if mic.muted else ''}",
+                "TEST SPEAKERS / HEADPHONES",
+                "TEST MICROPHONE",
+                "BLUETOOTH HEADSETS",
+                "AUDIO FILES / TEST RECORDINGS",
+                "BACK",
+            ]
+            act=self.pick("AUDIO CENTER",acts,subtitle="OUTPUT, HEADPHONES AND MICROPHONE DIAGNOSTICS")
+            if act in (None,"BACK"):return
+            if act.startswith("OUTPUT DEVICE"):self.choose_audio_sink(sinks)
+            elif act.startswith("OUTPUT VOLUME"):self.adjust_audio_level("output",sink=sink)
+            elif act.startswith("MICROPHONE:"):self.choose_audio_source(sources)
+            elif act.startswith("MIC INPUT LEVEL"):self.adjust_audio_level("input",source=source)
+            elif act=="TEST SPEAKERS / HEADPHONES":self.speaker_test(sink)
+            elif act=="TEST MICROPHONE":self.microphone_test(source)
+            elif act=="BLUETOOTH HEADSETS":self.bluetooth_headsets()
+            elif act=="AUDIO FILES / TEST RECORDINGS":
+                folder=audio.state_dir()
+                files=sorted(folder.glob("*.wav")) if folder.exists() else []
+                if not files:self.toast("NO AUDIO TEST FILES YET",["RUN A SPEAKER OR MICROPHONE TEST FIRST."]);continue
+                chosen=self.pick("AUDIO TEST FILES",files,lambda p:f"{p.name}  {p.stat().st_size//1024} KB")
+                if chosen:
+                    played,detail=audio.play_audio(chosen,sink)
+                    self.toast("PLAYBACK COMPLETE" if played else "PLAYBACK FAILED",[detail])
+
     def bluetooth_headsets(self):
         if not shutil.which("bluetoothctl"):self.toast("BLUETOOTH CONTROL IS NOT INSTALLED");return
         while True:
@@ -752,8 +880,9 @@ class PixelCockpit:
             return
 
     def settings(self):
-        act=self.pick("SETTINGS",["REMOTE DEVICES","SYSTEM DIAGNOSTICS","HARDWARE ACCEPTANCE REPORT","SYSTEM POWER","SECURE CREDENTIALS WITH PIN","GAMEPAD CALIBRATION","RUN SETUP WIZARD","CHOOSE PIXEL SKIN","SYSTEM STATUS"],subtitle=f"ACTIVE SKIN: {self.ui.theme.label}")
-        if act=="REMOTE DEVICES": self.remote_devices()
+        act=self.pick("SETTINGS",["AUDIO / MIC TEST","REMOTE DEVICES","SYSTEM DIAGNOSTICS","HARDWARE ACCEPTANCE REPORT","SYSTEM POWER","SECURE CREDENTIALS WITH PIN","GAMEPAD CALIBRATION","RUN SETUP WIZARD","CHOOSE PIXEL SKIN","SYSTEM STATUS"],subtitle=f"ACTIVE SKIN: {self.ui.theme.label}")
+        if act=="AUDIO / MIC TEST":self.audio_settings()
+        elif act=="REMOTE DEVICES": self.remote_devices()
         elif act=="SYSTEM DIAGNOSTICS":
             ok,lines=diagnostics.summary();self.toast("ALL CHECKS PASSED" if ok else "HARDWARE CHECKS NEED ATTENTION",lines)
         elif act=="HARDWARE ACCEPTANCE REPORT":
@@ -924,6 +1053,7 @@ class PixelCockpit:
             provider=next((p for p in self.cfg.providers if p.id==direct),None)
             if provider:self.provider_hub(provider)
         if os.environ.pop("HANDAI_VOICE_HOME","")=="1":self.voice_input()
+        if os.environ.pop("HANDAI_AUDIO_HOME","")=="1":self.audio_settings()
         menu=[("NEW SESSION",self.new_session),("ACTIVE SESSIONS",self.sessions),("PROVIDERS / LOGIN",self.providers),("SKILLS HUB",self.skill_screen),("NETWORK",self.network),("VOICE INPUT",self.voice_input),("PHONE KEYBOARD",self.phone_keyboard),("INSTALL LOCAL AGENTS",self.install_agents),("SETTINGS",self.settings),("QUIT",None)]
         idx=0
         while True:
