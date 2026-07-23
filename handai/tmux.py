@@ -7,11 +7,13 @@ exactly why a remote agent keeps running after you detach the handheld.
 
 from __future__ import annotations
 
+import shlex
 import subprocess
 from dataclasses import dataclass
 
 from .providers import Mode
 from .remote import ssh_argv
+from .router import Target
 
 _FMT = "#{session_name}\t#{session_windows}\t#{?session_attached,attached,detached}"
 
@@ -104,3 +106,61 @@ def attach_argv(session: SessionInfo) -> list[str]:
     if session.host:
         return ssh_argv(session.host," ".join(inner),tty=True)
     return inner
+
+
+def start_target(target: Target, timeout: float = 12.0) -> tuple[bool, str]:
+    try:
+        result=subprocess.run(target.detached_argv,capture_output=True,text=True,timeout=timeout)
+    except (OSError,subprocess.TimeoutExpired,ValueError) as exc:
+        return False,str(exc)
+    detail=(result.stderr or result.stdout).strip()
+    return result.returncode==0,detail or ("SESSION READY" if result.returncode==0 else "SESSION START FAILED")
+
+
+def from_target(target: Target) -> SessionInfo:
+    return SessionInfo(target.session,1,False,target.mode.host if target.mode.is_ssh else None)
+
+
+def capture(session: SessionInfo, lines: int = 14, timeout: float = 8.0) -> list[str]:
+    count=max(1,min(100,int(lines)))
+    command=["tmux","capture-pane","-p","-t",session.name,"-S",f"-{count}"]
+    try:
+        if session.host:
+            remote_command=" ".join(shlex.quote(item) for item in command)
+            result=subprocess.run(ssh_argv(session.host,remote_command,batch=True),
+                                  capture_output=True,text=True,timeout=timeout)
+        else:
+            result=subprocess.run(command,capture_output=True,text=True,timeout=timeout)
+    except (OSError,subprocess.TimeoutExpired,ValueError) as exc:
+        return [f"SESSION READ FAILED: {exc}"]
+    if result.returncode!=0:
+        return [(result.stderr.strip() or "SESSION IS NOT AVAILABLE")]
+    output=[line.rstrip() for line in result.stdout.splitlines()]
+    while output and not output[-1]:output.pop()
+    return output[-count:] or ["SESSION RUNNING - WAITING FOR OUTPUT"]
+
+
+def send_text(session: SessionInfo, text: str, enter: bool = True,
+              timeout: float = 8.0) -> tuple[bool, str]:
+    value=str(text)
+    if not value:return False,"PROMPT IS EMPTY"
+    buffer="handai-input"
+    load=["tmux","load-buffer","-b",buffer,"-"]
+    paste=["tmux","paste-buffer","-b",buffer,"-d","-t",session.name]
+    press=["tmux","send-keys","-t",session.name,"Enter"]
+    try:
+        if session.host:
+            command=" ".join(shlex.quote(item) for item in load)+" && "+" ".join(shlex.quote(item) for item in paste)
+            if enter:command+=" && "+" ".join(shlex.quote(item) for item in press)
+            result=subprocess.run(ssh_argv(session.host,command,batch=True),input=value,
+                                  capture_output=True,text=True,timeout=timeout)
+        else:
+            result=subprocess.run(load,input=value,capture_output=True,text=True,timeout=timeout)
+            if result.returncode==0:
+                result=subprocess.run(paste,capture_output=True,text=True,timeout=timeout)
+            if enter and result.returncode==0:
+                result=subprocess.run(press,capture_output=True,text=True,timeout=timeout)
+    except (OSError,subprocess.TimeoutExpired,ValueError) as exc:
+        return False,str(exc)
+    detail=(result.stderr or result.stdout).strip()
+    return result.returncode==0,detail or ("PROMPT SENT" if result.returncode==0 else "PROMPT SEND FAILED")

@@ -687,9 +687,40 @@ class PixelCockpit:
         choices.append("<ENTER PATH>"); wd=self.pick("NEW / WORKDIR",choices)
         if wd=="<ENTER PATH>": wd=self.prompt("PATH ON TARGET",m.default_workdir or "~/")
         if wd is None:return
+        if not m.is_remote and not shutil.which(p.command[0]):
+            self.toast(f"{p.label.upper()} CLI IS NOT INSTALLED",["USE INSTALL LOCAL AGENTS AFTER WIFI IS CONNECTED.","REMOTE PROVIDERS CAN RUN ON YOUR COMPUTER."])
+            return
         try: self.env(p); target=build_target(p,m,wd)
         except ValueError as e:self.toast(str(e));return
-        self.status=f"LAUNCHING {target.display}"; self.interactive(target.argv); self.status=f"DETACHED FROM {p.label}"
+        self.session_console(target)
+
+    def session_console(self,target):
+        self.draw_busy(f"STARTING {target.provider.label}")
+        ok,detail=tmux.start_target(target)
+        if not ok:self.toast("SESSION START FAILED",[detail]);return
+        session=tmux.from_target(target);self.status=f"SESSION READY: {target.provider.label}"
+        while True:
+            self.chrome(target.provider.label,target.display)
+            self.ui.frame(18,88,604,322,self.ui.CYAN,3)
+            output=[]
+            for line in tmux.capture(session,18):
+                output.extend(self.wrap(line,92))
+            for row,line in enumerate(output[-13:]):
+                color=self.ui.YELLOW if line.lstrip().startswith((">", "YOU", "RESULT")) else self.ui.INK
+                self.ui.text(32,105+row*22,line,color,1,max_chars=94)
+            self.footer("A TYPE PROMPT   START PHONE QR   B BACK");self.ui.present()
+            event=self.ui.event()
+            if event=="a":
+                prompt=self.prompt(f"PROMPT / {target.provider.label}")
+                if prompt:
+                    sent,message=tmux.send_text(session,prompt);self.status=message
+                    if not sent:self.toast("PROMPT SEND FAILED",[message])
+                    else:time.sleep(0.2)
+            elif event=="done":
+                self.share_phone_keyboard(session)
+            elif event in ("b","cancel","quit"):
+                self.status=f"{target.provider.label} SESSION RUNNING"
+                return
 
     def provider_hub(self,p:Provider):
         modes=self.cfg.modes_for(p);remote_modes=[m for m in modes if m.is_remote]
@@ -747,8 +778,9 @@ class PixelCockpit:
         prefix=f"handai-{p.id}-";found=[s for s in tmux.list_all(self.cfg.modes) if s.name.startswith(prefix)]
         session=self.pick(f"{provider_brand(p.id).wordmark} SESSIONS",found,lambda s:f"{'*' if s.attached else 'O'} {s.name} [{s.host or 'DEVICE'}]")
         if not session:return
-        act=self.pick(session.name,["ATTACH","KILL SESSION"])
-        if act=="ATTACH":self.interactive(tmux.attach_argv(session))
+        act=self.pick(session.name,["OPEN PIXEL CONSOLE","TERMINAL ATTACH","KILL SESSION"])
+        if act=="OPEN PIXEL CONSOLE":self.session_viewer(session,p.label)
+        elif act=="TERMINAL ATTACH":self.interactive(tmux.attach_argv(session))
         elif act=="KILL SESSION":self.toast("SESSION KILLED" if tmux.kill(session) else "KILL FAILED")
 
     def sessions(self):
@@ -756,9 +788,26 @@ class PixelCockpit:
         found=tmux.list_all(self.cfg.modes)
         s=self.pick("SESSIONS",found,lambda x:f"{'*' if x.attached else 'O'} {x.name} [{x.host or 'DEVICE'}]")
         if not s:return
-        act=self.pick(s.name,["ATTACH","KILL SESSION"])
-        if act=="ATTACH":self.interactive(tmux.attach_argv(s));self.status=f"DETACHED FROM {s.name}"
+        act=self.pick(s.name,["OPEN PIXEL CONSOLE","TERMINAL ATTACH","KILL SESSION"])
+        if act=="OPEN PIXEL CONSOLE":self.session_viewer(s,s.name)
+        elif act=="TERMINAL ATTACH":self.interactive(tmux.attach_argv(s));self.status=f"DETACHED FROM {s.name}"
         elif act=="KILL SESSION":self.status=f"KILLED {s.name}" if tmux.kill(s) else f"KILL FAILED: {s.name}"
+
+    def session_viewer(self,session,label):
+        while True:
+            self.chrome("ACTIVE SESSION",label)
+            self.ui.frame(18,88,604,322,self.ui.CYAN,3);output=[]
+            for line in tmux.capture(session,18):output.extend(self.wrap(line,92))
+            for row,line in enumerate(output[-13:]):self.ui.text(32,105+row*22,line,self.ui.INK,1,max_chars=94)
+            self.footer("A TYPE PROMPT   START PHONE QR   B BACK");self.ui.present();event=self.ui.event()
+            if event=="a":
+                value=self.prompt("SESSION PROMPT")
+                if value:
+                    ok,message=tmux.send_text(session,value);self.status=message
+                    if not ok:self.toast("PROMPT SEND FAILED",[message])
+                    else:time.sleep(0.2)
+            elif event=="done":self.share_phone_keyboard(session)
+            elif event in ("b","cancel","quit"):return
 
     def providers(self):
         area=self.pick("PROVIDERS / LOGIN",["LOCAL PROVIDERS","REMOTE PROVIDERS"])
@@ -851,6 +900,9 @@ class PixelCockpit:
         self.draw_busy("SCANNING SESSIONS");sessions=tmux.list_all(self.cfg.modes)
         session=self.pick("PHONE KEYBOARD",sessions,lambda x:f"{x.name} [{x.host or 'DEVICE'}]")
         if not session:return
+        self.share_phone_keyboard(session)
+
+    def share_phone_keyboard(self,session):
         ts=tailscale.status();host=phone.safe_ip(ts.ips) if ts.online else None
         host=host or phone.local_ip()
         if host=="127.0.0.1":self.toast("NO LAN OR TAILSCALE IP FOUND");return

@@ -36,6 +36,7 @@ class Target:
     mode: Mode
     workdir: str
     argv: list[str]
+    detached_argv: list[str]
     session: str
 
     @property
@@ -107,6 +108,11 @@ def build_target(
         tmux = ["tmux", "new-session", "-A", "-s", name, inner]
         remote_cmd = " ".join(shlex.quote(a) for a in tmux)
         argv = ssh_argv(mode.host,remote_cmd,tty=True)
+        detached=(
+            f"tmux has-session -t {shlex.quote(name)} 2>/dev/null || "
+            f"tmux new-session -d -s {shlex.quote(name)} {shlex.quote(inner)}"
+        )
+        detached_argv=ssh_argv(mode.host,detached,batch=True)
     else:
         # Local: load our tmux.conf if configured, so the gamepad "compose"
         # keybinding (popup -> OSK -> send-keys) is active in the session.
@@ -114,5 +120,12 @@ def build_target(
         conf = os.environ.get("HANDAI_TMUX_CONF")
         base = ["tmux"] + (["-f", conf] if conf else [])
         argv = [*base, "new-session", "-A", "-s", name, inner]
+        tmux_prefix=" ".join(shlex.quote(item) for item in base)
+        detached=(
+            f"{tmux_prefix} has-session -t {shlex.quote(name)} 2>/dev/null || "
+            f"{tmux_prefix} new-session -d -s {shlex.quote(name)} {shlex.quote(inner)}"
+        )
+        detached_argv=["sh","-c",detached]
 
-    return Target(provider=provider, mode=mode, workdir=workdir, argv=argv, session=name)
+    return Target(provider=provider, mode=mode, workdir=workdir, argv=argv,
+                  detached_argv=detached_argv,session=name)

@@ -126,7 +126,8 @@ def scan() -> list[Network]:
         _last_scan_error = f"WPA_SUPPLICANT NOT READY ON {iface}"
         return []
     rc, response = _wpa("scan")
-    if rc != 0 or "FAIL" in response:
+    busy = "FAIL-BUSY" in response
+    if (rc != 0 or "FAIL" in response) and not busy:
         _last_scan_error = f"WIFI SCAN COULD NOT START ON {iface}"
         return []
     # SDIO radios can take several seconds to report their first completed scan.

@@ -24,7 +24,7 @@ import zipfile
 
 from handai.config import Config
 from handai.network import Network, detect_iface, parse_saved_networks, parse_scan_results
-from handai import audio, bootdiag, demo, devices, diagnostics, hardware_report, music, oauth, power, preferences, skill_catalog, skills
+from handai import audio, bootdiag, demo, devices, diagnostics, hardware_report, music, network, oauth, power, preferences, skill_catalog, skills
 from handai.providers import Mode, OAuthProfile, Provider, parse_modes, parse_providers
 from handai.remote import _export_line
 from handai.router import _cd_expr, build_target, session_name
@@ -368,6 +368,8 @@ class TestRouter(unittest.TestCase):
     def test_local_target(self):
         t = build_target(_claude(), LOCAL, "~/work/proj")
         self.assertEqual(t.argv[:4], ["tmux", "new-session", "-A", "-s"])
+        self.assertEqual(t.detached_argv[:2],["sh","-c"])
+        self.assertIn("new-session -d",t.detached_argv[-1])
         self.assertEqual(t.session, "handai-claude-local-work-proj")
         self.assertIn("claude", t.argv[-1])
         self.assertNotIn("[ -f ~/.handai_env ]", t.argv[-1])  # oauth-device, no source
@@ -377,6 +379,9 @@ class TestRouter(unittest.TestCase):
         self.assertEqual(t.argv[0], "ssh")
         self.assertIn("-t",t.argv)
         self.assertIn("dev@box",t.argv)
+        self.assertNotIn("-t",t.detached_argv)
+        self.assertIn("BatchMode=yes",t.detached_argv)
+        self.assertIn("new-session -d",t.detached_argv[-1])
         # remote token-env sources the provisioned env file
         self.assertIn(".handai_env", t.argv[-1])
 
@@ -530,6 +535,23 @@ class TestTmuxParse(unittest.TestCase):
         self.assertEqual(attach_argv(local), ["tmux", "attach-session", "-t", "handai-x"])
         self.assertEqual(attach_argv(remote)[0], "ssh")
 
+    @patch("handai.tmux.subprocess.run")
+    def test_send_text_streams_prompt_through_tmux_buffer(self,run):
+        run.return_value=subprocess.CompletedProcess([],0,"","")
+        session=tmux.SessionInfo("handai-demo",1,False,None)
+        ok,message=tmux.send_text(session,"hello; still literal")
+        self.assertTrue(ok);self.assertEqual(message,"PROMPT SENT")
+        self.assertEqual(run.call_args_list[0].kwargs["input"],"hello; still literal")
+        self.assertEqual(run.call_args_list[0].args[0][:3],["tmux","load-buffer","-b"])
+        self.assertEqual(run.call_args_list[-1].args[0],
+                         ["tmux","send-keys","-t","handai-demo","Enter"])
+
+    @patch("handai.tmux.subprocess.run")
+    def test_capture_trims_empty_terminal_rows(self,run):
+        run.return_value=subprocess.CompletedProcess([],0,"LINE 1\nLINE 2\n\n\n","")
+        session=tmux.SessionInfo("handai-demo",1,False,None)
+        self.assertEqual(tmux.capture(session),["LINE 1","LINE 2"])
+
 
 class TestSecrets(unittest.TestCase):
     def test_roundtrip(self):
@@ -610,6 +632,20 @@ class TestIfaceDetect(unittest.TestCase):
 
     def test_none_when_no_candidate(self):
         self.assertIsNone(detect_iface(["eth0", "lo"], is_wireless=lambda n: False))
+
+
+class TestWifiScanFlow(unittest.TestCase):
+    @patch("handai.network.time.sleep")
+    @patch("handai.network.Path.exists", return_value=True)
+    @patch("handai.network._wpa")
+    @patch("handai.network._iface", return_value="wlan0")
+    @patch("handai.network.available", return_value=True)
+    def test_busy_scan_is_polled_until_results_arrive(self,_available,_iface,wpa,_exists,_sleep):
+        rows=("bssid / frequency / signal level / flags / ssid\n"
+              "aa:bb:cc:dd:ee:ff\t2412\t-42\t[WPA2-PSK-CCMP][ESS]\tHome\n")
+        wpa.side_effect=[(0,"PONG\n"),(0,"FAIL-BUSY\n"),(0,rows)]
+        self.assertEqual([item.ssid for item in network.scan()],["Home"])
+        self.assertEqual(network.scan_error(),"")
 
 
 class TestSavedNetworksParse(unittest.TestCase):
