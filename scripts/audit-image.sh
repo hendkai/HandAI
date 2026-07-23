@@ -74,6 +74,9 @@ for path in \
 	usr/bin/npm \
 	usr/bin/git \
 	usr/bin/xz \
+	usr/sbin/sfdisk \
+	usr/bin/partx \
+	usr/sbin/resize2fs \
 	usr/bin/curl \
 	bin/bash \
 	usr/bin/tailscale \
@@ -141,9 +144,28 @@ grep -q 'HARDWARE SELF TEST' "$TMP/rootfs/usr/sbin/handai-boot-log" || {
 	echo "Windows-readable hardware self-test export is missing" >&2
 	exit 1
 }
+grep -q 'sfdisk --no-reread -N 4' \
+	"$TMP/rootfs/etc/init.d/S06handai-storage" || {
+	echo "first-boot SD data expansion is missing" >&2
+	exit 1
+}
+grep -q 'blkid -s LABEL -o value' \
+	"$TMP/rootfs/etc/init.d/S06handai-storage" || {
+	echo "data expansion is not protected by a filesystem-label check" >&2
+	exit 1
+}
 grep -q 'monitor.bluez.seat-monitoring = disabled' \
 	"$TMP/rootfs/etc/wireplumber/wireplumber.conf.d/51-handai-bluetooth.conf" || {
 	echo "embedded Bluetooth audio policy is missing" >&2
+	exit 1
+}
+grep -a -q '22\.22\.3' "$TMP/rootfs/usr/bin/node" || {
+	echo "Node runtime is too old for the current OpenClaw release" >&2
+	exit 1
+}
+grep -q 'npm_config_prefix=/data/handai/npm' \
+	"$TMP/rootfs/etc/init.d/S99handai" || {
+	echo "persistent local-agent install path is missing" >&2
 	exit 1
 }
 "$READELF" -n "$TMP/rootfs/bin/busybox" | grep -q 'OS: Linux, ABI: 4\.9\.0' || {

@@ -50,6 +50,12 @@ append_boot_log() {
 			tail -n 80 /data/handai/cockpit.log 2>/dev/null
 			echo "--- SELF TEST END ---"
 		fi
+		if [ "$STAGE" = "STORAGE_GROW" ]; then
+			echo "--- STORAGE GROW LOG ---"
+			cat /tmp/handai-storage-grow.log 2>/dev/null ||
+				echo "storage growth log unavailable"
+			echo "--- STORAGE GROW END ---"
+		fi
 	} >>"$BOOT_LOG"
 	sync "$BOOT_LOG" 2>/dev/null || sync
 	mount -o remount,ro /boot 2>/dev/null ||

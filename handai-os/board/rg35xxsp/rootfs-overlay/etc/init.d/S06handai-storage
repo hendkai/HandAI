@@ -1,18 +1,63 @@
 #!/bin/sh
 # Mount HandAI's persistent data partition before drivers and audio services
-# start writing logs or state. S99handai repeats this defensively, but normally
-# finds /data mounted already.
+# start writing logs or state. On the first boot, grow partition 4 and its ext4
+# filesystem into the unused remainder of the physical SD card.
+
+GROW_LOG=/tmp/handai-storage-grow.log
+
+grow_data_partition() {
+	data_dev="$(readlink -f "$1" 2>/dev/null || echo "$1")"
+	case "$data_dev" in
+		/dev/mmcblk0p4) disk=/dev/mmcblk0; part=mmcblk0p4 ;;
+		/dev/mmcblk1p4) disk=/dev/mmcblk1; part=mmcblk1p4 ;;
+		*) return 0 ;;
+	esac
+	[ -b "$disk" ] && [ -b "$data_dev" ] || return 0
+
+	{
+		echo "device=$data_dev disk=$disk"
+		total="$(blockdev --getsz "$disk" 2>/dev/null || echo 0)"
+		start="$(cat "/sys/class/block/$part/start" 2>/dev/null || echo 0)"
+		size="$(cat "/sys/class/block/$part/size" 2>/dev/null || echo 0)"
+		end=$((start + size))
+		echo "before: total=$total start=$start size=$size free=$((total - end))"
+
+		# Leave GPT's final 33 sectors to sfdisk. A generous threshold avoids
+		# rewriting an already-expanded table for harmless alignment slack.
+		if [ "$total" -gt $((end + 32768)) ]; then
+			echo "growing GPT partition 4"
+			if printf ',+\n' | sfdisk --no-reread -N 4 "$disk"; then
+				sync
+				partx --update --nr 4 "$disk" || true
+				sleep 1
+			else
+				echo "partition growth failed; retaining the current safe size"
+			fi
+		fi
+
+		# This is safe and idempotent. If the running kernel could not refresh
+		# partition 4 while boot-resource is mounted, the next boot completes it.
+		resize2fs "$data_dev" || true
+		echo "after-size=$(cat "/sys/class/block/$part/size" 2>/dev/null || echo unknown)"
+	} >"$GROW_LOG" 2>&1
+	/usr/sbin/handai-boot-log STORAGE_GROW \
+		"partition 4 growth attempted; see report below"
+}
 
 start() {
 	mkdir -p /data
 	if ! mountpoint -q /data 2>/dev/null; then
 		for dev in /dev/disk/by-label/handai-data /dev/mmcblk0p4 /dev/mmcblk1p4; do
 			if [ -e "$dev" ]; then
+				[ "$(blkid -s LABEL -o value "$dev" 2>/dev/null)" = "handai-data" ] ||
+					continue
+				grow_data_partition "$dev"
 				mount "$dev" /data 2>/dev/null && break
 			fi
 		done
 	fi
 	mkdir -p /data/handai /data/handai/home/.config
+	[ -f "$GROW_LOG" ] && cp "$GROW_LOG" /data/handai/storage-grow.log
 	/usr/sbin/handai-boot-log STORAGE_EARLY \
 		"data-mounted=$(mountpoint -q /data && echo yes || echo no)"
 }

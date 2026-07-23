@@ -1,0 +1,7 @@
+# From https://nodejs.org/dist/v22.22.3/SHASUMS256.txt
+sha256  1c4a9933a5e45bc88f54f70b5f91232c127ec49f1a5989d23fb85824c7adf9b7  node-v22.22.3-linux-arm64.tar.xz
+sha256  556e3a339c960d1e3cef3d7244ffaf88e1fa0df757f6fd545c59587603fdd8f1  node-v22.22.3-linux-armv7l.tar.xz
+sha256  edb5478071bd1375e80195ca52f72823998bb5141b1a09e68bc54b3e2eb67754  node-v22.22.3-linux-ppc64le.tar.xz
+sha256  2e5d13569282d016861fae7c8f935e741693c269101a5bebcf761a5376d1f99f  node-v22.22.3-linux-x64.tar.xz
+# Node.js license text is unchanged from the pinned Buildroot package.
+sha256  e991d81497a85bb24fc6bffae0a3637a6accd6c6bc5ce1f2c5698bd555cf9d49  LICENSE

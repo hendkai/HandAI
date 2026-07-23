@@ -3,6 +3,16 @@
 # has no npm and reports that cleanly because its agents live on another host.
 set -u
 
+STATE_ROOT="${HANDAI_STATE:-/data/handai}"
+HOME="${HOME:-$STATE_ROOT/home}"
+NPM_PREFIX="$STATE_ROOT/npm"
+export HOME
+export HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
+export npm_config_prefix="$NPM_PREFIX"
+export npm_config_cache="${npm_config_cache:-$STATE_ROOT/npm-cache}"
+export PATH="$NPM_PREFIX/bin:$HOME/.local/bin:/usr/local/bin:$PATH"
+mkdir -p "$NPM_PREFIX" "$npm_config_cache" "$HOME/.local/bin" "$HERMES_HOME"
+
 if ! command -v npm >/dev/null 2>&1; then
 	echo "npm is not installed - this is a remote-first image."
 	echo "Run agents on your devbox/cloud instead."
@@ -25,8 +35,8 @@ for spec in \
 	}
 done
 
-# OpenClaw requires Node 22.19+ (Node 24 recommended).
-if node -e 'v=process.versions.node.split(".").map(Number);process.exit(v[0]>22||(v[0]===22&&v[1]>=19)?0:1)' ; then
+# Current OpenClaw supports Node 22.22.3+, 24.15+ or 25.9+.
+if node -e 'v=process.versions.node.split(".").map(Number); ok=(v[0]===22&&(v[1]>22||(v[1]===22&&v[2]>=3)))||(v[0]===24&&(v[1]>15||(v[1]===15&&v[2]>=0)))||(v[0]===25&&(v[1]>9||(v[1]===9&&v[2]>=0)))||v[0]>25; process.exit(ok?0:1)' ; then
 	echo
 	echo "Installing OpenClaw..."
 	npm install -g openclaw@latest || {
@@ -34,7 +44,7 @@ if node -e 'v=process.versions.node.split(".").map(Number);process.exit(v[0]>22|
 		failures=$((failures + 1))
 	}
 else
-	echo "Skipping local OpenClaw: Node 22.19+ is required."
+	echo "Skipping local OpenClaw: Node 22.22.3+, 24.15+ or 25.9+ is required."
 	failures=$((failures + 1))
 fi
 
@@ -46,7 +56,9 @@ if ! command -v hermes >/dev/null 2>&1; then
 		command -v xz >/dev/null 2>&1 &&
 		curl --fail --silent --show-error --location \
 			https://hermes-agent.nousresearch.com/install.sh -o "$hermes_installer"; then
-		bash "$hermes_installer" --skip-setup --skip-browser || {
+		bash "$hermes_installer" --skip-setup --skip-browser \
+			--dir "$HERMES_HOME/hermes-agent" \
+			--hermes-home "$HERMES_HOME" || {
 			echo "Warning: Hermes install failed; remote use remains available." >&2
 			failures=$((failures + 1))
 		}

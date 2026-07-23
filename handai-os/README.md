@@ -29,7 +29,9 @@ the pinned SHA-256 before decompressing it under the gitignored `blobs/` directo
 The image is not redistributed by HandAI. During assembly, `post-image.sh` copies
 the proven GPT/boot layout, imports its matching kernel modules and firmware into
 the Buildroot userland, replaces `boot/batocera` with HandAI's SquashFS and creates
-a fresh `handai-data` partition. The downloaded source image is never modified.
+a fresh `handai-data` partition. On first boot that partition and its ext4
+filesystem automatically grow into the unused remainder of the physical SD
+card. The downloaded source image is never modified.
 
 ## Flash
 
@@ -47,12 +49,14 @@ bash scripts/audit-image.sh output/images/sdcard.img
 The audit checks the pinned four-partition GPT layout, extracts the embedded
 SquashFS, verifies HandAI plus its launcher, HTTPS certificates, SSH, tmux,
 Tailscale, QR tooling, ALSA/PipeWire/BlueZ voice capture, whisper.cpp and matching
-vendor kernel modules, then validates the
+vendor kernel modules, a current OpenClaw-compatible Node runtime and first-boot
+storage expansion tooling, then validates the
 `handai-data` ext4 partition and prints the image SHA-256.
 
 After the first real boot, run `handai-hardware-report` over SSH or select
 **Settings → Hardware Acceptance Report**. The JSON result is persisted under
-`/data/handai/` and turns the remaining board check into one reproducible run.
+`/data/handai/`; a delayed text copy plus GUI, network and audio diagnostics is
+also appended to `handai-debug.log` on the Windows-readable boot partition.
 
 ## Open HandAI bootloader (experimental)
 
@@ -66,11 +70,15 @@ image. It never modifies the stable source image.
 ## Variants
 - **Remote** (recommended build-script default): no Node/local agent CLIs; the
   handheld is a remote cockpit with SSH and gateway clients.
-- **Full**: Node is present so local `claude`/`codex`/`opencode` can be installed
-  and run on-device. Select it with `VARIANT=full`.
+- **Full**: Node is present so local `claude`/`codex`/`opencode`/`openclaw` can
+  be installed and run on-device. Installed CLIs and npm cache live persistently
+  below `/data/handai`, not in the disposable root overlay. Select it with
+  `VARIANT=full`.
 
 ## What boots
-`etc/init.d/S45handai-audio` starts the PipeWire/WirePlumber audio graph for
+`etc/init.d/S06handai-storage` expands and mounts persistent storage before any
+service writes state. `etc/init.d/S45handai-audio` starts the
+PipeWire/WirePlumber audio graph for
 USB/ALSA and Bluetooth HFP microphones. `etc/init.d/S99handai` starts WiFi
 (`opt/handai/net/up.sh`) and respawns
 `python3 -m handai` on tty1 with `PYTHONPATH=/opt/handai`,

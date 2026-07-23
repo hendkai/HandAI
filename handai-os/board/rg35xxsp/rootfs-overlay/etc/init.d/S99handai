@@ -8,7 +8,7 @@ HANDAI_TTY="${HANDAI_TTY:-/dev/tty1}"
 HANDAI_UI="${HANDAI_UI:-pixel}"
 HANDAI_FULLSCREEN="${HANDAI_FULLSCREEN:-1}"
 
-DAEMON_ENV="HOME=/data/handai/home XDG_CONFIG_HOME=/data/handai/home/.config XDG_RUNTIME_DIR=/run/handai-audio PIPEWIRE_RUNTIME_DIR=/run/handai-audio HANDAI_CONFIG=/etc/handai/handai.json HANDAI_STATE=/data/handai PYTHONPATH=/opt/handai HANDAI_TMUX_CONF=/etc/handai/tmux.conf HANDAI_UI=$HANDAI_UI HANDAI_FULLSCREEN=$HANDAI_FULLSCREEN SDL_VIDEODRIVER=mali TERM=linux"
+DAEMON_ENV="HOME=/data/handai/home HERMES_HOME=/data/handai/home/.hermes XDG_CONFIG_HOME=/data/handai/home/.config XDG_RUNTIME_DIR=/run/handai-audio PIPEWIRE_RUNTIME_DIR=/run/handai-audio HANDAI_CONFIG=/etc/handai/handai.json HANDAI_STATE=/data/handai PYTHONPATH=/opt/handai HANDAI_TMUX_CONF=/etc/handai/tmux.conf HANDAI_UI=$HANDAI_UI HANDAI_FULLSCREEN=$HANDAI_FULLSCREEN npm_config_prefix=/data/handai/npm npm_config_cache=/data/handai/npm-cache PATH=/data/handai/npm/bin:/data/handai/home/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin SDL_VIDEODRIVER=mali TERM=linux"
 
 start() {
 	# mount the persistent /data partition if one exists (device only). Node name
@@ -18,6 +18,8 @@ start() {
 	if ! mountpoint -q /data 2>/dev/null; then
 		for dev in /dev/disk/by-label/handai-data /dev/mmcblk0p4 /dev/mmcblk1p4; do
 			if [ -e "$dev" ]; then
+				[ "$(blkid -s LABEL -o value "$dev" 2>/dev/null)" = "handai-data" ] ||
+					continue
 				mount "$dev" /data 2>/dev/null && break
 			fi
 		done

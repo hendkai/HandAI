@@ -111,7 +111,11 @@ Boot-Package, Android-Bootpartition (Kernel + Initramfs) und GPT exakt bei. Es
 ersetzt auf der FAT-Boot-Resource-Partition ausschließlich `boot/batocera` durch
 ein SquashFS des Buildroot-Targets. Passende Kernelmodule/Firmware werden vorher
 aus dem verifizierten Original-SquashFS übernommen. Partition 4 wird als frisches
-ext4 mit Label `handai-data` formatiert.
+ext4 mit Label `handai-data` formatiert. `S06handai-storage` vergrößert sie beim
+ersten Start bis ans Ende der tatsächlichen SD-Karte und erweitert anschließend
+das Dateisystem. Dadurch bleiben lokal installierte Agent-CLIs unter
+`/data/handai` dauerhaft erhalten und sind nicht auf die 512-MB-Ausgangsgröße
+des Images beschränkt.
 
 Für das optionale offene Testimage kopiert `build-open-bootloader.sh` zuerst
 dieses geprüfte Image, ersetzt dann ausschließlich den eGON-SPL/U-Boot-Bereich
