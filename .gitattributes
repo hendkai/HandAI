@@ -1,6 +1,14 @@
 * text=auto
+.gitattributes text eol=lf
+.gitignore text eol=lf
 *.sh text eol=lf
 bin/handai text eol=lf
+handai-os/board/**/rootfs-overlay/etc/default/* text eol=lf
+handai-os/board/**/rootfs-overlay/etc/init.d/* text eol=lf
+handai-os/board/**/rootfs-overlay/usr/sbin/* text eol=lf
+handai-os/board/rg35xxsp/initramfs-init text eol=lf
+handai-os/configs/*_defconfig text eol=lf
+handai-os/package/handai/handai-* text eol=lf
 Makefile text eol=lf
 *.py text eol=lf
 *.yml text eol=lf
