@@ -1,0 +1,25 @@
+#!/bin/sh
+# Mount HandAI's persistent data partition before drivers and audio services
+# start writing logs or state. S99handai repeats this defensively, but normally
+# finds /data mounted already.
+
+start() {
+	mkdir -p /data
+	if ! mountpoint -q /data 2>/dev/null; then
+		for dev in /dev/disk/by-label/handai-data /dev/mmcblk0p4 /dev/mmcblk1p4; do
+			if [ -e "$dev" ]; then
+				mount "$dev" /data 2>/dev/null && break
+			fi
+		done
+	fi
+	mkdir -p /data/handai /data/handai/home/.config
+	/usr/sbin/handai-boot-log STORAGE_EARLY \
+		"data-mounted=$(mountpoint -q /data && echo yes || echo no)"
+}
+
+case "$1" in
+	start) start ;;
+	stop) ;;
+	restart) start ;;
+	*) echo "usage: $0 {start|stop|restart}"; exit 1 ;;
+esac

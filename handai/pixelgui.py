@@ -1497,8 +1497,28 @@ class PixelCockpit:
         self.interactive(["sh",helper]);self.status="RAN LOCAL AGENT INSTALLER"
 
 
+def publish_gui_ready(
+    ui: SDL, logger: Path = Path("/usr/sbin/handai-boot-log")
+) -> bool:
+    """Persist proof that SDL and the handheld input backends initialized."""
+    if os.name == "posix" and logger.exists():
+        evdev = str(ui.evdev.path) if ui.evdev and ui.evdev.path else "none"
+        controller = "yes" if ui.pad else "no"
+        try:
+            result = subprocess.run(
+                [str(logger), "GUI_READY",
+                 f"SDL ready; controller={controller}; evdev={evdev}"],
+                timeout=4,
+            )
+            return result.returncode == 0
+        except (OSError, subprocess.TimeoutExpired):
+            return False
+    return False
+
+
 def main(config:Config,secrets:SecretStore):
     ui=SDL()
     cockpit=PixelCockpit(config,secrets,ui)
+    publish_gui_ready(ui)
     try:cockpit.run()
     finally:cockpit.music.close();ui.close()

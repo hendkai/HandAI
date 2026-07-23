@@ -12,6 +12,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import types
 import unittest
 import wave
 from collections import deque
@@ -31,7 +32,7 @@ from handai.router import _cd_expr, build_target, session_name
 from handai.secrets import SecretStore
 from handai import tmux
 from handai import phone, tailscale
-from handai.pixelgui import DEEPLAY_CONTROLLER_MAPPING, EvdevInput, PixelCockpit, THEMES, load_theme, save_theme, provider_actions, provider_brand, openclaw_gateway_health_argv, _FONT
+from handai.pixelgui import DEEPLAY_CONTROLLER_MAPPING, EvdevInput, PixelCockpit, THEMES, load_theme, save_theme, provider_actions, provider_brand, openclaw_gateway_health_argv, publish_gui_ready, _FONT
 
 
 def _claude():
@@ -487,6 +488,23 @@ class TestPreferences(unittest.TestCase):
         self.assertEqual(reader._decode(3, 17, -1), "up")
         self.assertEqual(reader._decode(3, 17, 1), "down")
         self.assertIsNone(reader._decode(1, 304, 0))
+
+    @patch("handai.pixelgui.subprocess.run")
+    def test_gui_ready_marker_reports_open_input_backend(self, run):
+        run.return_value = subprocess.CompletedProcess([], 0)
+        ui = types.SimpleNamespace(
+            pad=object(),
+            evdev=types.SimpleNamespace(path=Path("/dev/input/event3")),
+        )
+        with tempfile.TemporaryDirectory() as d:
+            logger = Path(d) / "handai-boot-log"
+            logger.touch()
+            with patch("handai.pixelgui.os.name", "posix"):
+                self.assertTrue(publish_gui_ready(ui, logger))
+        argv = run.call_args.args[0]
+        self.assertEqual(argv[1], "GUI_READY")
+        self.assertIn("controller=yes", argv[2])
+        self.assertIn("event3", argv[2])
 
     def test_first_run_and_button_map_persist(self):
         with tempfile.TemporaryDirectory() as d:
@@ -961,7 +979,7 @@ class TestHardwareReport(unittest.TestCase):
                 "sys/firmware/devicetree/base/model": "Anbernic RG35XXSP",
                 "sys/class/graphics/fb0/virtual_size": "640,480",
                 "sys/class/graphics/fb0/bits_per_pixel": "32",
-                "proc/bus/input/devices": "N: Name=gamepad\nH: Handlers=event0",
+                "proc/bus/input/devices": "N: Name=Deeplay-keys gamepad\nH: Handlers=event0",
                 "proc/mounts": "/dev/mmcblk0p4 /data ext4 rw 0 0\n",
                 "lib/firmware/rtl8821cs.bin": "firmware",
             }
@@ -976,6 +994,21 @@ class TestHardwareReport(unittest.TestCase):
             report = hardware_report.build_report(results)
             self.assertTrue(report["required_ok"])
             self.assertTrue(next(x for x in results if x.name == "wifi").ok)
+            self.assertTrue(next(x for x in results if x.name == "gamepad").ok)
+
+    def test_missing_builtin_gamepad_is_required_failure(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / "proc/bus/input").mkdir(parents=True)
+            (root / "proc/bus/input/devices").write_text(
+                "N: Name=USB Keyboard\nH: Handlers=event0\n", "utf-8"
+            )
+            (root / "dev/input").mkdir(parents=True)
+            (root / "dev/input/event0").touch()
+            result = next(x for x in hardware_report.collect(root)
+                          if x.name == "gamepad")
+            self.assertTrue(result.required)
+            self.assertFalse(result.ok)
 
     def test_required_failure_controls_report_status(self):
         report = hardware_report.build_report([

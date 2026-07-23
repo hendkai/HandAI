@@ -8,6 +8,7 @@ TARGET="$1"
 
 for f in \
 	etc/init.d/S05handai-boot \
+	etc/init.d/S06handai-storage \
 	etc/init.d/S45handai-audio \
 	etc/init.d/S99handai \
 	usr/sbin/handai-boot-log \

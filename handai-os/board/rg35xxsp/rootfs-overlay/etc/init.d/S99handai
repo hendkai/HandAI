@@ -60,6 +60,19 @@ start() {
 		done
 	) &
 	echo $! > /var/run/handai.pid
+
+	# Publish one delayed, read-only hardware acceptance report into the FAT
+	# boot log. The user can insert the SD card into Windows and send us this
+	# file even when networking or the GUI is broken.
+	(
+		sleep 15
+		env $DAEMON_ENV /usr/bin/handai-hardware-report \
+			--output /data/handai/hardware-report-latest.json \
+			>/data/handai/hardware-report-latest.txt 2>&1
+		status=$?
+		/usr/sbin/handai-boot-log SELF_TEST \
+			"hardware acceptance exit code $status"
+	) &
 }
 
 stop() {

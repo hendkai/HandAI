@@ -63,6 +63,7 @@ for path in \
 	usr/sbin/handai-install-agents \
 	usr/sbin/handai-boot-log \
 	etc/init.d/S05handai-boot \
+	etc/init.d/S06handai-storage \
 	etc/init.d/S99handai \
 	etc/init.d/S45handai-audio \
 	etc/wireplumber/wireplumber.conf.d/51-handai-bluetooth.conf \
@@ -115,6 +116,7 @@ grep -q 'OK BEFORE SWITCH_ROOT' "$TMP/initramfs/init" || {
 }
 for path in \
 	etc/init.d/S05handai-boot \
+	etc/init.d/S06handai-storage \
 	etc/init.d/S45handai-audio \
 	etc/init.d/S99handai \
 	usr/sbin/handai-boot-log; do
@@ -129,6 +131,14 @@ for path in \
 done
 grep -q 'HANDAI NEXUS' "$TMP/rootfs/opt/handai/handai/pixelgui.py" || {
 	echo "boot-art-matched default theme is missing" >&2
+	exit 1
+}
+grep -q 'GUI_READY' "$TMP/rootfs/opt/handai/handai/pixelgui.py" || {
+	echo "GUI-ready runtime marker is missing" >&2
+	exit 1
+}
+grep -q 'HARDWARE SELF TEST' "$TMP/rootfs/usr/sbin/handai-boot-log" || {
+	echo "Windows-readable hardware self-test export is missing" >&2
 	exit 1
 }
 grep -q 'monitor.bluez.seat-monitoring = disabled' \

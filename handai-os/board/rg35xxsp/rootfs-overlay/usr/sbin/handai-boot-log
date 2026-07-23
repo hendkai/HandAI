@@ -38,6 +38,18 @@ append_boot_log() {
 			dmesg 2>/dev/null | tail -n 120
 			echo "--- ERROR SNAPSHOT END ---"
 		fi
+		if [ "$STAGE" = "SELF_TEST" ]; then
+			echo "--- HARDWARE SELF TEST ---"
+			cat /data/handai/hardware-report-latest.txt 2>/dev/null ||
+				echo "hardware report unavailable"
+			echo "--- NETWORK LOG TAIL ---"
+			tail -n 80 /data/handai/net.log 2>/dev/null
+			echo "--- AUDIO LOG TAIL ---"
+			tail -n 80 /data/handai/audio.log 2>/dev/null
+			echo "--- COCKPIT LOG TAIL ---"
+			tail -n 80 /data/handai/cockpit.log 2>/dev/null
+			echo "--- SELF TEST END ---"
+		fi
 	} >>"$BOOT_LOG"
 	sync "$BOOT_LOG" 2>/dev/null || sync
 	mount -o remount,ro /boot 2>/dev/null ||

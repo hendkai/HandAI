@@ -68,6 +68,12 @@ def collect(root: Path = Path("/")) -> list[Result]:
     events = sorted(p.name for p in (dev / "input").glob("event*")) if (dev / "input").exists() else []
     results.append(Result("input", bool(events), True,
                           f"events={','.join(events) or '-'} devices={'present' if input_text else 'unknown'}"))
+    input_folded = input_text.casefold()
+    gamepad = any(marker in input_folded for marker in
+                  ("deeplay", "gamepad", "controller", "rg35xx"))
+    results.append(Result("gamepad", gamepad, True,
+                          "built-in controller detected" if gamepad
+                          else "no Deeplay/RG35XX controller in /proc/bus/input/devices"))
     lid = "SW_LID" in input_text or "Lid Switch" in input_text
     results.append(Result("lid switch", lid, False, "detected" if lid else "not exposed by kernel"))
 
@@ -110,6 +116,20 @@ def collect(root: Path = Path("/")) -> list[Result]:
         audio_commands.append(f"{command}={'yes' if found else 'no'}")
     results.append(Result("voice input", all(item.endswith("=yes") for item in audio_commands),
                           False, " ".join(audio_commands)))
+
+    if root == Path("/"):
+        audio_socket = Path(os.environ.get(
+            "PIPEWIRE_RUNTIME_DIR", "/run/handai-audio"
+        )) / "pipewire-0"
+        results.append(Result(
+            "audio daemon", audio_socket.exists(), True, str(audio_socket)
+        ))
+        if wireless and shutil.which("wpa_cli"):
+            code, output = _command(["wpa_cli", "-i", wireless[0], "ping"])
+            results.append(Result(
+                "wifi control", code == 0 and "PONG" in output, True,
+                output[:160] or "wpa_supplicant did not answer",
+            ))
 
     if root == Path("/") and shutil.which("tailscale"):
         code, output = _command(["tailscale", "status", "--json"])
