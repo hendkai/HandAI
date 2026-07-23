@@ -547,6 +547,12 @@ class TestVoiceInput(unittest.TestCase):
         got=audio.parse_arecord_list(raw)
         self.assertEqual([x.id for x in got],["default","hw:CARD=USB,DEV=0","plughw:CARD=USB,DEV=0"])
 
+    def test_windows_directshow_microphone_parser(self):
+        raw='[in#0 @ 123] "Living Room Mic" (audio)\n[in#0 @ 123]   Alternative name "@device_cm_x"\n'
+        self.assertEqual(audio.parse_dshow_devices(raw),[
+            audio.AudioSource("Living Room Mic","Living Room Mic","dshow")
+        ])
+
     def test_pipewire_sinks_parse_output_nodes(self):
         raw=json.dumps([
             {"id":77,"info":{"props":{"media.class":"Audio/Sink","node.name":"bluez_output.aa",
@@ -589,6 +595,9 @@ class TestVoiceInput(unittest.TestCase):
         alsa=audio.record_argv(audio.AudioSource("hw:CARD=USB,DEV=0","USB","alsa"),wav)
         self.assertIn("--target=bluez_input.name",pw)
         self.assertEqual(alsa[0:4],["arecord","-q","-D","hw:CARD=USB,DEV=0"])
+        windows=audio.record_argv(audio.AudioSource("Mic & Headset","Windows Mic","dshow"),wav)
+        self.assertIn("audio=Mic & Headset",windows)
+        self.assertNotIn("shell=True",windows)
 
     def test_bluetooth_listing_parser(self):
         text="Device AA:BB:CC:DD:EE:FF Living Room Headset\nController 00:11 nope\n"

@@ -130,6 +130,16 @@ def parse_arecord_list(text: str) -> list[AudioSource]:
     return found
 
 
+def parse_dshow_devices(text: str) -> list[AudioSource]:
+    found: list[AudioSource] = []
+    for line in str(text).splitlines():
+        match = re.search(r'\]\s+"([^"]+)"\s+\(audio\)\s*$', line)
+        if match:
+            label = match.group(1)
+            found.append(AudioSource(label, label, "dshow"))
+    return found
+
+
 def _run(argv: list[str], timeout: float = 8.0) -> subprocess.CompletedProcess[str] | None:
     try:
         return subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
@@ -139,6 +149,11 @@ def _run(argv: list[str], timeout: float = 8.0) -> subprocess.CompletedProcess[s
 
 def list_sources() -> list[AudioSource]:
     sources: list[AudioSource] = []
+    if os.name == "nt" and shutil.which("ffmpeg"):
+        result = _run(["ffmpeg", "-hide_banner", "-list_devices", "true",
+                       "-f", "dshow", "-i", "dummy"])
+        if result:
+            sources.extend(parse_dshow_devices(result.stderr))
     if shutil.which("pw-dump"):
         result = _run(["pw-dump"])
         if result and result.returncode == 0:
@@ -268,6 +283,12 @@ def record_argv(source: AudioSource, target: Path) -> list[str]:
             "pw-record", f"--target={source.id}", "--rate=16000", "--channels=1",
             "--format=s16", str(target),
         ]
+    if source.backend == "dshow":
+        return [
+            "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+            "-f", "dshow", "-i", f"audio={source.id}", "-ac", "1",
+            "-ar", "16000", "-sample_fmt", "s16", str(target),
+        ]
     return [
         "arecord", "-q", "-D", source.id, "-f", "S16_LE", "-r", "16000",
         "-c", "1", "-t", "wav", str(target),
@@ -278,11 +299,19 @@ def start_recording(source: AudioSource, target: Path | None = None) -> subproce
     output = target or recording_path()
     output.parent.mkdir(parents=True, exist_ok=True)
     output.unlink(missing_ok=True)
-    return subprocess.Popen(record_argv(source, output), stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    return subprocess.Popen(record_argv(source, output), stdin=subprocess.PIPE if source.backend == "dshow" else None,
+                            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
 
 
 def stop_recording(process: subprocess.Popen[bytes], timeout: float = 3.0) -> tuple[bool, str]:
-    process.terminate()
+    if process.stdin:
+        try:
+            process.stdin.write(b"q\n")
+            process.stdin.flush()
+        except OSError:
+            process.terminate()
+    else:
+        process.terminate()
     try:
         _, stderr = process.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
@@ -345,6 +374,8 @@ def play_audio(path: Path, sink: AudioSink | None = None, timeout: float = 20.0)
         if sink and sink.backend == "alsa":
             argv.extend(["-D", sink.id])
         argv.append(str(path))
+    elif os.name == "nt" and shutil.which("ffplay"):
+        argv = ["ffplay", "-nodisp", "-autoexit", "-loglevel", "error", str(path)]
     else:
         return False, "NO AUDIO PLAYER FOUND"
     result = _run(argv, timeout)

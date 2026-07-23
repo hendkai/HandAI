@@ -32,6 +32,10 @@ it useful for diagnosing capture hardware, Bluetooth profiles and gain before
 testing speech recognition. Bluetooth microphones require HFP/HSP; A2DP alone
 still provides playback only.
 
+The Windows development preview uses an installed FFmpeg/DirectShow microphone
+and FFplay for test-recording playback. Mixer gain remains a device-image
+feature because the handheld controls it through PipeWire or ALSA.
+
 ## Local model
 
 The multilingual `tiny-q5_1` whisper.cpp model is about 31 MB and supports
