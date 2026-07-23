@@ -1,4 +1,4 @@
-"""Minimal terminal client for the official Hermes Responses API."""
+"""Minimal terminal client for a paired remote Hermes session."""
 
 from __future__ import annotations
 
@@ -10,13 +10,14 @@ import urllib.request
 
 
 class HermesRemote:
-    def __init__(self,base_url:str,key:str,timeout:float=300):
-        self.base=base_url.rstrip("/");self.key=key;self.timeout=timeout
+    def __init__(self,base_url:str,login_token:str,timeout:float=300):
+        self.base=base_url.rstrip("/");self.login_token=login_token;self.timeout=timeout
 
     def request(self,path:str,payload:dict|None=None):
         data=json.dumps(payload).encode() if payload is not None else None
         req=urllib.request.Request(self.base+path,data=data,
-            headers={"Authorization":"Bearer "+self.key,"Content-Type":"application/json","Accept":"application/json"},
+            headers={"Authorization":"Bearer "+self.login_token,
+                     "Content-Type":"application/json","Accept":"application/json"},
             method="POST" if data is not None else "GET")
         with urllib.request.urlopen(req,timeout=self.timeout) as response:
             return json.loads(response.read().decode("utf-8"))
@@ -47,13 +48,13 @@ def main(argv=None)->int:
     parser=argparse.ArgumentParser(prog="handai-hermes-remote")
     parser.add_argument("--url",default=os.environ.get("HERMES_REMOTE_URL"))
     args=parser.parse_args(argv)
-    key=os.environ.get("HERMES_REMOTE_API_KEY","")
-    if not args.url or not key:
+    login_token=os.environ.get("HERMES_REMOTE_TOKEN","")
+    if not args.url or not login_token:
         print("Hermes remote URL/login token is missing.");return 2
-    client=HermesRemote(args.url,key)
+    client=HermesRemote(args.url,login_token)
     try:client.capabilities()
     except Exception as e:print(f"Connection failed: {e}");return 1
-    print("HandAI connected to Hermes Responses API. /quit exits.")
+    print("HandAI connected to the remote Hermes session. /quit exits.")
     previous=None
     while True:
         try:text=input("you> ").strip()

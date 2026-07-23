@@ -1,8 +1,8 @@
 """Config loading - providers, modes, and recent workdirs from JSON.
 
 JSON (not YAML/TOML) on purpose: zero third-party deps so the cockpit runs on a
-bare Python in a minimal rootfs. Env vars in string values are expanded, so the
-example config can reference ${ANTHROPIC_API_KEY} etc. without hard-coding.
+bare Python in a minimal rootfs. Environment variables in string values are
+expanded so deployment-specific remote targets never need to be hard-coded.
 """
 
 from __future__ import annotations

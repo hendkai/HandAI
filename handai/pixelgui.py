@@ -687,7 +687,7 @@ class PixelCockpit:
         elif m.transport=="hermes-api":
             os.environ["HERMES_REMOTE_URL"]=m.endpoint or ""
             remote_key=self.secrets.get("gateway:"+m.id)
-            if remote_key:os.environ["HERMES_REMOTE_API_KEY"]=remote_key
+            if remote_key:os.environ["HERMES_REMOTE_TOKEN"]=remote_key
         choices=list(self.cfg.recent_workdirs)
         if m.default_workdir and m.default_workdir not in choices: choices.insert(0,m.default_workdir)
         choices.append("<ENTER PATH>"); wd=self.pick("NEW / WORKDIR",choices)
@@ -1412,8 +1412,8 @@ class PixelCockpit:
             argv=openclaw_gateway_health_argv(item.address,token)
         else:
             argv=[os.environ.get("PYTHON","python"),"-c",
-                  "import os;from handai.hermes_remote import HermesRemote;print(HermesRemote(os.environ['HERMES_REMOTE_URL'],os.environ['HERMES_REMOTE_API_KEY']).request('/v1/capabilities'))"]
-            env["HERMES_REMOTE_URL"]=item.address;env["HERMES_REMOTE_API_KEY"]=token or ""
+                  "import os;from handai.hermes_remote import HermesRemote;print(HermesRemote(os.environ['HERMES_REMOTE_URL'],os.environ['HERMES_REMOTE_TOKEN']).request('/v1/capabilities'))"]
+            env["HERMES_REMOTE_URL"]=item.address;env["HERMES_REMOTE_TOKEN"]=token or ""
         self.draw_busy("TESTING GATEWAY")
         try:r=subprocess.run(argv,capture_output=True,text=True,timeout=15,env=env)
         except (OSError,subprocess.TimeoutExpired) as e:self.toast(f"GATEWAY TEST FAILED: {e}");return
