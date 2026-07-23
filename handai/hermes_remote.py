@@ -1,4 +1,4 @@
-"""Minimal terminal client for the official Hermes Sessions API."""
+"""Minimal terminal client for the official Hermes Responses API."""
 
 from __future__ import annotations
 
@@ -21,18 +21,26 @@ class HermesRemote:
         with urllib.request.urlopen(req,timeout=self.timeout) as response:
             return json.loads(response.read().decode("utf-8"))
 
-    def create_session(self)->str:
-        result=self.request("/api/sessions",{})
-        session=result.get("id") or result.get("session_id") or result.get("session",{}).get("id")
-        if not session:raise RuntimeError("Hermes did not return a session id")
-        return str(session)
+    def capabilities(self)->dict:
+        return self.request("/v1/capabilities")
 
-    def chat(self,session:str,text:str)->str:
-        result=self.request(f"/api/sessions/{session}/chat",{"input":text})
-        value=(result.get("response") or result.get("content") or result.get("output")
-               or result.get("message") or result)
-        if isinstance(value,dict):value=value.get("content") or value.get("text") or value
-        return value if isinstance(value,str) else json.dumps(value,indent=2)
+    def chat(self,text:str,previous_response_id:str|None=None)->tuple[str,str]:
+        payload={"model":"hermes-agent","input":text,"store":True}
+        if previous_response_id:payload["previous_response_id"]=previous_response_id
+        result=self.request("/v1/responses",payload)
+        response_id=str(result.get("id") or "")
+        chunks=[]
+        for item in result.get("output",[]):
+            if not isinstance(item,dict) or item.get("type")!="message":continue
+            for content in item.get("content",[]):
+                if isinstance(content,dict) and content.get("type")=="output_text":
+                    chunks.append(str(content.get("text") or ""))
+        value="".join(chunks).strip()
+        if not value:
+            value=str(result.get("output_text") or result.get("response") or "").strip()
+        if not response_id:raise RuntimeError("Hermes did not return a response id")
+        if not value:value=json.dumps(result,indent=2)
+        return response_id,value
 
 
 def main(argv=None)->int:
@@ -43,15 +51,18 @@ def main(argv=None)->int:
     if not args.url or not key:
         print("Hermes remote URL/API credential is missing.");return 2
     client=HermesRemote(args.url,key)
-    try:session=client.create_session()
+    try:client.capabilities()
     except Exception as e:print(f"Connection failed: {e}");return 1
-    print(f"HandAI connected to Hermes remote session {session}. /quit exits.")
+    print("HandAI connected to Hermes Responses API. /quit exits.")
+    previous=None
     while True:
         try:text=input("you> ").strip()
         except (EOFError,KeyboardInterrupt):print();break
         if text in ("/quit","/exit"):break
         if not text:continue
-        try:print("hermes> "+client.chat(session,text))
+        try:
+            previous,response=client.chat(text,previous)
+            print("hermes> "+response)
         except (OSError,urllib.error.HTTPError,ValueError,RuntimeError) as e:print(f"error> {e}")
     return 0
 

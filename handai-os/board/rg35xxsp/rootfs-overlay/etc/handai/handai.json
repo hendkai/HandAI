@@ -28,11 +28,11 @@
 
     { "id": "hermes", "label": "Hermes Agent", "command": ["hermes"],
       "auth": "oauth-device", "auth_methods": ["oauth-device"],
-      "login_command": ["hermes", "auth", "add", "nous", "--type", "oauth", "--no-browser"],
+      "login_command": ["hermes", "auth", "add", "nous", "--type", "oauth"],
       "oauth_profiles": [
-        {"label": "NOUS PORTAL", "command": ["hermes", "auth", "add", "nous", "--type", "oauth", "--no-browser"]},
-        {"label": "OPENAI CODEX", "command": ["hermes", "auth", "add", "openai-codex", "--type", "oauth", "--no-browser"]},
-        {"label": "XAI / GROK", "command": ["hermes", "auth", "add", "xai-oauth", "--type", "oauth", "--no-browser", "--manual-paste"]}
+        {"label": "NOUS PORTAL", "command": ["hermes", "auth", "add", "nous", "--type", "oauth"]},
+        {"label": "OPENAI CODEX", "command": ["hermes", "auth", "add", "openai-codex", "--type", "oauth"]},
+        {"label": "XAI / GROK", "command": ["hermes", "auth", "add", "xai-oauth"], "requires_tty": true}
       ],
       "allowed_modes": ["local", "devbox", "cloud"], "skills_dir": "~/.hermes/skills" },
 

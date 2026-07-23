@@ -33,6 +33,8 @@ BR2_PACKAGE_PYTHON3_SSL=y
 BR2_PACKAGE_CA_CERTIFICATES=y
 BR2_PACKAGE_LIBCURL=y
 BR2_PACKAGE_LIBCURL_CURL=y
+BR2_PACKAGE_GIT=y
+BR2_PACKAGE_XZ=y
 
 # --- networking (WiFi from the cockpit) --------------------------------------
 BR2_PACKAGE_WPA_SUPPLICANT=y

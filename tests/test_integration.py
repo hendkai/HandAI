@@ -24,8 +24,14 @@ class _HermesHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         if self.headers.get("Authorization")!="Bearer test-key":self._reply({"error":"unauthorized"},401);return
         length=int(self.headers.get("Content-Length","0"));body=json.loads(self.rfile.read(length) or b"{}")
-        if self.path=="/api/sessions":self._reply({"id":"session-1"})
-        elif self.path=="/api/sessions/session-1/chat":self._reply({"response":"echo: "+body["input"]})
+        if self.path=="/v1/responses":
+            self._reply({"id":"response-1","output":[{"type":"message","content":[
+                {"type":"output_text","text":"echo: "+body["input"]}
+            ]}]})
+        else:self._reply({"error":"missing"},404)
+    def do_GET(self):
+        if self.headers.get("Authorization")!="Bearer test-key":self._reply({"error":"unauthorized"},401);return
+        if self.path=="/v1/capabilities":self._reply({"features":{"responses_api":True}})
         else:self._reply({"error":"missing"},404)
 
 
@@ -35,9 +41,10 @@ class TestHermesRemoteIntegration(unittest.TestCase):
         thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
         try:
             client=HermesRemote(f"http://127.0.0.1:{server.server_address[1]}","test-key")
-            session=client.create_session()
-            self.assertEqual(session,"session-1")
-            self.assertEqual(client.chat(session,"hello"),"echo: hello")
+            self.assertTrue(client.capabilities()["features"]["responses_api"])
+            response_id,text=client.chat("hello")
+            self.assertEqual(response_id,"response-1")
+            self.assertEqual(text,"echo: hello")
         finally:server.shutdown();server.server_close();thread.join(timeout=2)
 
 

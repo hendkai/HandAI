@@ -1,49 +1,71 @@
 #!/bin/sh
-# Install the LOCAL agent CLIs on a full (Node-enabled) image. On a remote-first
-# image there is no npm and this reports that cleanly — the agents live on your
-# devbox/cloud there. Needs network. Invoked from the cockpit ("Install local
-# agents") or over ssh.
-#
+# Install LOCAL agent CLIs on the full Node-enabled image. A remote-first image
+# has no npm and reports that cleanly because its agents live on another host.
 set -u
 
 if ! command -v npm >/dev/null 2>&1; then
-	echo "npm is not installed — this is a remote-first image."
-	echo "Local agent CLIs aren't used here; run agents on your devbox/cloud instead."
+	echo "npm is not installed - this is a remote-first image."
+	echo "Run agents on your devbox/cloud instead."
 	exit 1
 fi
 
-echo "Installing local agent CLIs via npm (requires network)…"
-if npm install -g \
-	@anthropic-ai/claude-code \
-	@openai/codex \
-	opencode-ai ; then
-	# OpenClaw requires Node 22.19+ (Node 24 recommended). Keep the other
-	# agents usable when the image still bundles an older Node release.
-	if node -e 'v=process.versions.node.split(".").map(Number);process.exit(v[0]>22||(v[0]===22&&v[1]>=19)?0:1)' ; then
-		npm install -g openclaw@latest || echo "Warning: OpenClaw install failed; remote use remains available." >&2
-	else
-		echo "Skipping local OpenClaw: Node 22.19+ is required; remote use remains available."
-	fi
-	if ! command -v hermes >/dev/null 2>&1; then
-		echo "Installing Hermes Agent from the official installer..."
-		hermes_installer=/tmp/hermes-install.$$.sh
-		if curl --fail --silent --show-error --location \
-			https://hermes-agent.nousresearch.com/install.sh -o "$hermes_installer"; then
-			bash "$hermes_installer" --skip-setup --skip-browser || \
-				echo "Warning: Hermes install failed; use Hermes on a remote computer." >&2
-			rm -f "$hermes_installer"
-		else
-			echo "Warning: could not download the official Hermes installer." >&2
-			rm -f "$hermes_installer"
-		fi
-	fi
+echo "Installing local agent CLIs (requires network)..."
+failures=0
+for spec in \
+	"Claude Code|@anthropic-ai/claude-code" \
+	"Codex CLI|@openai/codex" \
+	"OpenCode|opencode-ai"; do
+	label=${spec%%|*}
+	package=${spec#*|}
 	echo
-	echo "Installed. Found on PATH:"
-	for c in claude codex opencode openclaw hermes; do
-		p=$(command -v "$c" 2>/dev/null) && echo "  $c -> $p"
-	done
-	echo "Now log in per provider from the cockpit (Providers / Login)."
+	echo "Installing $label..."
+	npm install -g "$package" || {
+		echo "Warning: $label install failed; remote use remains available." >&2
+		failures=$((failures + 1))
+	}
+done
+
+# OpenClaw requires Node 22.19+ (Node 24 recommended).
+if node -e 'v=process.versions.node.split(".").map(Number);process.exit(v[0]>22||(v[0]===22&&v[1]>=19)?0:1)' ; then
+	echo
+	echo "Installing OpenClaw..."
+	npm install -g openclaw@latest || {
+		echo "Warning: OpenClaw install failed; remote use remains available." >&2
+		failures=$((failures + 1))
+	}
 else
-	echo "npm install failed — check network and package names." >&2
-	exit 1
+	echo "Skipping local OpenClaw: Node 22.19+ is required."
+	failures=$((failures + 1))
 fi
+
+if ! command -v hermes >/dev/null 2>&1; then
+	echo
+	echo "Installing Hermes Agent from the official installer..."
+	hermes_installer=/tmp/hermes-install.$$.sh
+	if command -v git >/dev/null 2>&1 &&
+		command -v xz >/dev/null 2>&1 &&
+		curl --fail --silent --show-error --location \
+			https://hermes-agent.nousresearch.com/install.sh -o "$hermes_installer"; then
+		bash "$hermes_installer" --skip-setup --skip-browser || {
+			echo "Warning: Hermes install failed; remote use remains available." >&2
+			failures=$((failures + 1))
+		}
+	else
+		echo "Warning: Hermes prerequisites or installer download are unavailable." >&2
+		failures=$((failures + 1))
+	fi
+	rm -f "$hermes_installer"
+fi
+
+echo
+echo "Found on PATH:"
+found=0
+for command_name in claude codex opencode openclaw hermes; do
+	command_path=$(command -v "$command_name" 2>/dev/null) && {
+		echo "  $command_name -> $command_path"
+		found=$((found + 1))
+	}
+done
+echo "Log in per provider from Providers / Login."
+[ "$found" -gt 0 ] || exit 1
+[ "$failures" -eq 0 ] || echo "Some local agents failed; their remote modes are still usable."

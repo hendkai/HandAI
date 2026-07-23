@@ -687,10 +687,15 @@ class PixelCockpit:
         choices.append("<ENTER PATH>"); wd=self.pick("NEW / WORKDIR",choices)
         if wd=="<ENTER PATH>": wd=self.prompt("PATH ON TARGET",m.default_workdir or "~/")
         if wd is None:return
-        if not m.is_remote and not shutil.which(p.command[0]):
+        needs_local_cli=m.transport in ("local","openclaw-gateway")
+        if needs_local_cli and not shutil.which(p.command[0]):
             self.toast(f"{p.label.upper()} CLI IS NOT INSTALLED",["USE INSTALL LOCAL AGENTS AFTER WIFI IS CONNECTED.","REMOTE PROVIDERS CAN RUN ON YOUR COMPUTER."])
             return
-        try: self.env(p); target=build_target(p,m,wd)
+        extra_args=[]
+        if m.transport=="openclaw-gateway":
+            gateway_token=self.secrets.get("gateway:"+m.id)
+            if gateway_token:extra_args=["--token",gateway_token]
+        try: self.env(p); target=build_target(p,m,wd,extra_args)
         except ValueError as e:self.toast(str(e));return
         self.session_console(target)
 
@@ -814,20 +819,23 @@ class PixelCockpit:
         if area=="LOCAL PROVIDERS":
             local=next((m for m in self.cfg.modes if not m.is_remote),None)
             candidates=[p for p in self.cfg.providers if local and p.allows_mode(local.id)]
-            p=self.pick("LOCAL PROVIDERS",candidates,self.provider_label,subtitle="RUNS ON THIS HANDHELD")
+            p=self.pick("LOCAL PROVIDERS",candidates,self.local_provider_label,subtitle="RUNS ON THIS HANDHELD")
             if p:self.provider_hub(p)
         elif area=="REMOTE PROVIDERS":
             remote_modes=[m for m in self.cfg.modes if m.is_remote]
             candidates=[p for p in self.cfg.providers
                         if any(m in self.cfg.modes_for(p) for m in remote_modes)]
             p=self.pick("REMOTE PROVIDERS",candidates,
-                        lambda p:f"REMOTE {self.provider_label(p)}",
+                        lambda p:f"? {p.label} [CHOOSE TARGET]",
                         subtitle="CHOOSE THE AGENT ON THE OTHER DEVICE")
             if p:self.provider_hub(p)
 
     def provider_label(self,p):
-        ready=p.supports_auth("oauth-device") or self.secrets.has(p.id)
-        return f"{'+' if ready else 'X'} {p.label} [{' + '.join(p.auth_methods or [p.auth])}]"
+        return f"{p.label} [{' + '.join(p.auth_methods or [p.auth])}]"
+
+    def local_provider_label(self,p):
+        installed=bool(p.command and shutil.which(p.command[0]))
+        return f"{'+' if installed else 'X'} {p.label} [{'INSTALLED' if installed else 'CLI MISSING'}]"
 
     def provider_login(self,p,host):
         if not p:return

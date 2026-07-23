@@ -88,7 +88,17 @@ def build_target(
     workdir: str,
     extra_args: list[str] | None = None,
 ) -> Target:
-    if not provider.allows_mode(mode.id):
+    managed = mode.id.startswith("managed-")
+    managed_allowed = (
+        managed
+        and (
+            (mode.is_ssh and (not provider.allowed_modes
+                              or any(item != "local" for item in provider.allowed_modes)))
+            or (mode.transport == "openclaw-gateway" and provider.id == "openclaw")
+            or (mode.transport == "hermes-api" and provider.id == "hermes")
+        )
+    )
+    if not provider.allows_mode(mode.id) and not managed_allowed:
         raise ValueError(f"{provider.label} does not allow mode {mode.label}")
 
     extra_args = extra_args or []
@@ -96,7 +106,10 @@ def build_target(
     name = session_name(provider, mode, workdir)
     # remote + token-env -> source the provisioned env file inside the session
     source_env = mode.is_ssh and provider.supports_auth("token-env")
-    if mode.transport=="hermes-api":extra_args=["__handai_hermes_remote__","--url",mode.endpoint or ""]
+    if mode.transport=="openclaw-gateway":
+        extra_args=["--url",mode.endpoint or "",*extra_args]
+    elif mode.transport=="hermes-api":
+        extra_args=["__handai_hermes_remote__","--url",mode.endpoint or ""]
     inner = _tmux_inner(provider, workdir, extra_args, source_env)
 
     if mode.is_ssh:

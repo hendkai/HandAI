@@ -55,8 +55,12 @@ for path in \
 	opt/handai/handai/hardware_report.py \
 	opt/handai/handai/power.py \
 	opt/handai/handai/demo.py \
+	opt/handai/handai/router.py \
+	opt/handai/handai/tmux.py \
+	opt/handai/handai/hermes_remote.py \
 	usr/bin/handai \
 	usr/bin/handai-hardware-report \
+	usr/sbin/handai-install-agents \
 	usr/sbin/handai-boot-log \
 	etc/init.d/S05handai-boot \
 	etc/init.d/S99handai \
@@ -64,6 +68,12 @@ for path in \
 	usr/bin/python3 \
 	usr/bin/ssh \
 	usr/bin/tmux \
+	usr/bin/node \
+	usr/bin/npm \
+	usr/bin/git \
+	usr/bin/xz \
+	usr/bin/curl \
+	bin/bash \
 	usr/bin/tailscale \
 	usr/sbin/tailscaled \
 	lib/libudev.so.1 \

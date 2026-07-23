@@ -398,11 +398,24 @@ class TestRouter(unittest.TestCase):
 
 
     def test_openclaw_gateway_runs_local_client_in_tmux(self):
-        provider=Provider("openclaw","OpenClaw",["openclaw","tui"])
+        provider=Provider("openclaw","OpenClaw",["openclaw","tui"],allowed_modes=["local","devbox"])
         mode=Mode("managed-home","Home Claw","openclaw-gateway",endpoint="wss://claw.example")
-        target=build_target(provider,mode,"~")
+        target=build_target(provider,mode,"~",["--token","secret"])
         self.assertEqual(target.argv[0],"tmux")
         self.assertIn("wss://claw.example",target.display)
+        self.assertIn("--url",target.detached_argv[-1])
+        self.assertIn("--token",target.detached_argv[-1])
+
+    def test_managed_ssh_is_allowed_for_remote_capable_provider(self):
+        provider=Provider("claude","Claude",["claude"],allowed_modes=["local","devbox"])
+        mode=Mode("managed-sofa","Sofa PC","ssh",host="dev@sofa.local")
+        self.assertEqual(build_target(provider,mode,"~/work").mode,mode)
+
+    def test_managed_target_still_rejects_local_only_provider(self):
+        provider=Provider("local","Local",["local"],allowed_modes=["local"])
+        mode=Mode("managed-sofa","Sofa PC","ssh",host="dev@sofa.local")
+        with self.assertRaises(ValueError):
+            build_target(provider,mode,"~/work")
 
 
 class TestManagedDevices(unittest.TestCase):
