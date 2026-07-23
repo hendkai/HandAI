@@ -163,6 +163,8 @@ class TestProviders(unittest.TestCase):
                  "Login with GitHub Copilot"],
             ],
         )
+        self.assertTrue(all(profile.requires_tty for profile in opencode.oauth_profiles))
+        self.assertEqual(opencode.oauth_profiles[-1].initial_input,"\r")
 
     def test_device_and_example_provider_configs_stay_in_sync(self):
         root=Path(__file__).parents[1]
@@ -199,6 +201,14 @@ class TestPixelGuiPure(unittest.TestCase):
 
 
 class TestNativeOAuth(unittest.TestCase):
+    def test_initial_pty_answer_waits_for_selection_prompt(self):
+        session=oauth.LoginSession(["provider"],initial_input="\r",requires_tty=True)
+        session._ingest("starting provider")
+        self.assertEqual(session._pending_initial_input(),"")
+        session._ingest("\nSelect GitHub deployment type\n")
+        self.assertEqual(session._pending_initial_input(),"\r")
+        self.assertEqual(session._pending_initial_input(),"")
+
     def test_parse_device_url_code_and_success(self):
         url,code,needs_input,success=oauth.parse_login_output(
             "\x1b[32mGo to: https://auth.openai.com/codex/device\x1b[0m\n"

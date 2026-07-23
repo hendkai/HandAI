@@ -136,6 +136,7 @@ class LoginSession:
         self._needs_input = False
         self._returncode: int | None = None
         self._cancelled = False
+        self._initial_sent = False
         self._thread = threading.Thread(target=self._run, name="handai-oauth", daemon=True)
 
     def start(self) -> "LoginSession":
@@ -226,8 +227,6 @@ class LoginSession:
         with self._lock:
             self._pty = terminal
             self._state = "waiting"
-        if self.initial_input:
-            terminal.write(self.initial_input)
         while terminal.isalive():
             try:
                 chunk = terminal.read(4096)
@@ -235,6 +234,12 @@ class LoginSession:
                 break
             if chunk:
                 self._ingest(chunk)
+                initial = self._pending_initial_input()
+                if initial:
+                    try:
+                        terminal.write(initial)
+                    except (OSError, RuntimeError):
+                        pass
                 # ConPTY asks the terminal client for its device attributes.
                 # Answer it so child output is not delayed by the console host.
                 if "\x1b[c" in chunk:
@@ -272,14 +277,15 @@ class LoginSession:
             self._process = process
             self._master_fd = master
             self._state = "waiting"
-        if self.initial_input:
-            os.write(master, self.initial_input.encode())
         while process.poll() is None:
             readable,_,_=select.select([master],[],[],.25)
             if readable:
                 try:chunk=os.read(master,4096)
                 except OSError:break
-                if chunk:self._ingest(chunk.decode("utf-8","replace"))
+                if chunk:
+                    self._ingest(chunk.decode("utf-8","replace"))
+                    initial=self._pending_initial_input()
+                    if initial:os.write(master,initial.encode())
             if time.monotonic()-self.started>self.timeout:
                 self.cancel();break
         try:
@@ -301,6 +307,18 @@ class LoginSession:
             self._code=code or self._code
             self._needs_input=needs_input
             if success and self._state=="waiting":self._state="completing"
+
+    def _pending_initial_input(self) -> str:
+        """Release a configured PTY answer only after its prompt is visible."""
+        with self._lock:
+            if not self.initial_input or self._initial_sent:
+                return ""
+            visible=clean_output(self._output)
+            compact=re.sub(r"\s+","",visible).casefold()
+            if "select" not in compact and not self._needs_input:
+                return ""
+            self._initial_sent=True
+            return self.initial_input
 
     def _finish(self, returncode: int) -> None:
         with self._lock:

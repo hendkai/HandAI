@@ -68,9 +68,9 @@
       "auth_methods": ["oauth-device"],
       "login_command": ["opencode", "auth", "login", "-p", "openai", "-m", "ChatGPT Pro/Plus (headless)"],
       "oauth_profiles": [
-        {"label": "OPENAI CHATGPT PRO/PLUS", "command": ["opencode", "auth", "login", "-p", "openai", "-m", "ChatGPT Pro/Plus (headless)"]},
-        {"label": "XAI SUPERGROK", "command": ["opencode", "auth", "login", "-p", "xai", "-m", "xAI Grok OAuth (Headless / Remote / VPS)"]},
-        {"label": "GITHUB COPILOT", "command": ["opencode", "auth", "login", "-p", "github-copilot", "-m", "Login with GitHub Copilot"], "initial_input": "\r"}
+        {"label": "OPENAI CHATGPT PRO/PLUS", "command": ["opencode", "auth", "login", "-p", "openai", "-m", "ChatGPT Pro/Plus (headless)"], "requires_tty": true},
+        {"label": "XAI SUPERGROK", "command": ["opencode", "auth", "login", "-p", "xai", "-m", "xAI Grok OAuth (Headless / Remote / VPS)"], "requires_tty": true},
+        {"label": "GITHUB.COM COPILOT", "command": ["opencode", "auth", "login", "-p", "github-copilot", "-m", "Login with GitHub Copilot"], "initial_input": "\r", "requires_tty": true}
       ],
       "allowed_modes": ["local", "devbox"],
       "skills_dir": "~/.config/opencode/skills"
