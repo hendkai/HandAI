@@ -80,6 +80,7 @@ for path in \
 	usr/bin/xz \
 	usr/sbin/sfdisk \
 	usr/bin/partx \
+	usr/bin/flock \
 	usr/sbin/resize2fs \
 	usr/bin/curl \
 	bin/bash \

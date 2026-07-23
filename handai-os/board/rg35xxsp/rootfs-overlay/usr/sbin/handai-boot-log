@@ -9,6 +9,12 @@ DATA_LOG=/data/handai/boot-debug.log
 UPTIME="$(cut -d. -f1 /proc/uptime 2>/dev/null || echo 0)"
 LINE="RUNTIME +${UPTIME}s | ${STAGE} | ${DETAIL}"
 
+# Multiple late-boot workers can report at the same time. Serialize the FAT
+# remount/write/sync sequence so the recovery log itself stays trustworthy.
+mkdir -p /run
+exec 9>/run/handai-boot-log.lock
+flock -w 15 9 2>/dev/null || exit 0
+
 append_boot_log() {
 	mountpoint -q /boot 2>/dev/null || return 0
 	BOOT_DEV="$(awk '$2 == "/boot" { print $1; exit }' /proc/mounts)"
