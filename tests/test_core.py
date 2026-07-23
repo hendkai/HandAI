@@ -25,7 +25,7 @@ from handai.router import _cd_expr, build_target, session_name
 from handai.secrets import SecretStore
 from handai import tmux
 from handai import phone, tailscale
-from handai.pixelgui import PixelCockpit, THEMES, load_theme, save_theme, _FONT
+from handai.pixelgui import PixelCockpit, THEMES, load_theme, save_theme, provider_actions, provider_brand, _FONT
 
 
 def _claude():
@@ -104,6 +104,20 @@ class TestPixelGuiPure(unittest.TestCase):
         self.assertEqual(len(THEMES), 10)
         self.assertEqual(len({theme.id for theme in THEMES}), 10)
         self.assertEqual(len({theme.bg for theme in THEMES}), 10)
+
+    def test_provider_brands_cover_configured_agents_and_variants(self):
+        expected={"claude":"CLAUDE","codex":"CODEX","codex-remote":"CODEX",
+                  "hermes":"HERMES","opencode":"OPENCODE","openclaw":"OPENCLAW"}
+        self.assertEqual({key:provider_brand(key).wordmark for key in expected},expected)
+        self.assertEqual(provider_brand("custom-agent").wordmark,"AI AGENT")
+
+    def test_provider_home_actions_follow_provider_capabilities(self):
+        claude=Provider("claude","Claude",["claude"],skills_dir="~/.claude/skills")
+        actions=provider_actions(claude,[LOCAL,DEVBOX])
+        self.assertIn("REMOTE TARGETS",actions);self.assertIn("TEST CONNECTION",actions)
+        self.assertIn("PROVIDER SKILLS",actions);self.assertEqual(actions[-1],"BACK")
+        local=provider_actions(Provider("local","Local",["local"]),[LOCAL])
+        self.assertNotIn("REMOTE TARGETS",local);self.assertNotIn("PROVIDER SKILLS",local)
 
     def test_theme_persistence_and_bad_file_fallback(self):
         with tempfile.TemporaryDirectory() as d:

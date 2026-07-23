@@ -41,6 +41,46 @@ class Theme:
     green: tuple[int,int,int]
 
 
+@dataclass(frozen=True)
+class ProviderBrand:
+    id: str
+    wordmark: str
+    tagline: str
+    accent: tuple[int,int,int]
+    deep: tuple[int,int,int]
+    mark: str
+
+
+PROVIDER_BRANDS = {
+    "claude": ProviderBrand("claude","CLAUDE","THINK DEEPLY. BUILD CAREFULLY.",(218,119,87),(48,25,20),"spark"),
+    "codex": ProviderBrand("codex","CODEX","SHIP CODE FROM ANYWHERE.",(62,207,142),(8,45,38),"code"),
+    "hermes": ProviderBrand("hermes","HERMES","FAST AGENTS. SHARED SKILLS.",(245,190,67),(48,31,70),"wings"),
+    "opencode": ProviderBrand("opencode","OPENCODE","OPEN TOOLS. OPEN WORKFLOW.",(92,151,255),(19,31,77),"brackets"),
+    "openclaw": ProviderBrand("openclaw","OPENCLAW","YOUR CLAW. YOUR MACHINE.",(255,91,91),(72,17,25),"claw"),
+}
+DEFAULT_PROVIDER_BRAND = ProviderBrand("provider","AI AGENT","LOCAL OR REMOTE. YOU DECIDE.",(50,215,207),(15,35,50),"bot")
+
+
+def provider_brand(provider_id:str) -> ProviderBrand:
+    """Map configured variants such as codex-remote to one visual identity."""
+    key=str(provider_id).lower()
+    if key.startswith("codex"):key="codex"
+    elif key.startswith("claude"):key="claude"
+    elif key.startswith("hermes"):key="hermes"
+    elif key.startswith("opencode"):key="opencode"
+    elif key.startswith("openclaw"):key="openclaw"
+    return PROVIDER_BRANDS.get(key,DEFAULT_PROVIDER_BRAND)
+
+
+def provider_actions(provider:Provider,modes:Sequence[Mode]) -> list[str]:
+    remote=any(mode.is_remote for mode in modes)
+    actions=["START NEW SESSION","OAUTH / ACCOUNT"]
+    if remote:actions.extend(["REMOTE TARGETS","TEST CONNECTION"])
+    if provider.skills_dir:actions.append("PROVIDER SKILLS")
+    actions.extend(["ACTIVE SESSIONS","ABOUT PROVIDER","BACK"])
+    return actions
+
+
 THEMES = (
     Theme("neon-night","NEON NIGHT",(10,14,25),(18,27,43),(28,39,57),(224,238,226),(112,132,145),(50,215,207),(250,199,64),(238,91,137),(94,211,118)),
     Theme("gameboy","GAME BOY",(15,56,15),(48,98,48),(74,117,62),(155,188,15),(102,137,38),(139,172,15),(190,204,35),(79,123,35),(174,190,49)),
@@ -194,8 +234,12 @@ class SDL:
             typ=int.from_bytes(bytes(buf[0:4]),"little")
             if typ==0x100: return "quit"
             if typ==0x300:
+                scan=int.from_bytes(bytes(buf[16:20]),"little",signed=True)
                 key=int.from_bytes(bytes(buf[20:24]),"little",signed=True)
-                return {1073741906:"up",1073741905:"down",1073741904:"left",1073741903:"right",13:"done",32:"a",27:"cancel",8:"b",113:"quit"}.get(key,"none")
+                action={1073741906:"up",1073741905:"down",1073741904:"left",1073741903:"right",
+                        13:"done",1073741912:"done",32:"a",65:"a",97:"a",66:"b",98:"b",
+                        27:"cancel",8:"b",81:"quit",113:"quit"}.get(key)
+                return action or {4:"a",5:"b",40:"done",41:"cancel",42:"b",44:"a"}.get(scan,"none")
             if typ==0x651:
                 button=buf[12]
                 return self.button_map.get(button,"none")
@@ -226,6 +270,60 @@ class PixelCockpit:
         u.text(64,12,"HANDAI",u.INK,3); u.text(64,38,"PIXEL COCKPIT",u.CYAN,1)
         short=title[:24]; u.text(max(322,620-len(short)*12),20,short,u.YELLOW,2)
         if subtitle: u.text(22,72,subtitle,u.MUTED,1,max_chars=96)
+
+    def draw_provider_mark(self,brand:ProviderBrand,x:int,y:int,size:int=92):
+        """Draw a chunky original pixel interpretation of the provider identity."""
+        u=self.ui;c=brand.accent;d=brand.deep;s=max(4,size//12)
+        u.rect(x,y,size,size,d);u.frame(x,y,size,size,c,4)
+        cx=x+size//2;cy=y+size//2
+        if brand.mark=="spark":
+            u.rect(cx-s, y+14,2*s,size-28,c);u.rect(x+14,cy-s,size-28,2*s,c)
+            u.rect(cx-3*s,cy-3*s,2*s,2*s,c);u.rect(cx+s,cy+s,2*s,2*s,c)
+            u.rect(cx+s,cy-3*s,2*s,2*s,c);u.rect(cx-3*s,cy+s,2*s,2*s,c)
+        elif brand.mark=="code":
+            u.frame(x+18,y+18,size-36,size-36,c,8);u.rect(x+size-30,cy-10,20,20,d)
+            u.rect(cx-5,cy-5,10,10,c)
+        elif brand.mark=="wings":
+            u.rect(cx-5,y+20,10,size-40,c);u.rect(cx-23,cy-5,46,10,c)
+            for i in range(3):
+                u.rect(x+10+i*6,y+24+i*8,24-i*6,6,c);u.rect(cx+10,y+24+i*8,24-i*6,6,c)
+        elif brand.mark=="brackets":
+            u.rect(x+18,y+22,8,size-44,c);u.rect(x+18,y+22,24,8,c);u.rect(x+18,y+size-30,24,8,c)
+            u.rect(x+size-26,y+22,8,size-44,c);u.rect(x+size-42,y+22,24,8,c);u.rect(x+size-42,y+size-30,24,8,c)
+        elif brand.mark=="claw":
+            for i,h in enumerate((40,55,46)):
+                px=x+24+i*18;u.rect(px,y+18,8,h,c);u.rect(px-6,y+18,14,8,c)
+            u.rect(x+22,y+68,size-44,10,c);u.rect(x+30,y+76,size-60,7,c)
+        else:
+            u.rect(x+18,y+24,size-36,size-44,c);u.rect(x+27,y+34,size-54,size-62,d)
+            u.rect(x+34,y+42,8,8,c);u.rect(x+size-42,y+42,8,8,c);u.rect(cx-4,y+10,8,14,c)
+
+    def provider_menu(self,p:Provider,items:Sequence[str]) -> str|None:
+        """Fullscreen branded provider home with a scrollable action menu."""
+        brand=provider_brand(p.id);idx=0;top=0;rows=5
+        while True:
+            if idx<top:top=idx
+            if idx>=top+rows:top=idx-rows+1
+            u=self.ui;u.clear();u.rect(0,0,640,480,brand.deep)
+            # oversize pixel bands make the entire screen feel provider-owned.
+            for i in range(0,640,32):u.rect(i,0,16,7,brand.accent)
+            self.draw_provider_mark(brand,34,42,126)
+            word=brand.wordmark[:15];scale=5 if len(word)<=9 else 4
+            u.text(188,60,word,brand.accent,scale,max_chars=15)
+            u.text(190,112,brand.tagline,u.INK,1,max_chars=68)
+            u.text(190,137,"PROVIDER HOME",u.MUTED,2,max_chars=28)
+            u.rect(22,190,596,4,brand.accent)
+            for row,item in enumerate(items[top:top+rows]):
+                y=211+row*43;selected=(top+row)==idx
+                u.rect(34,y,572,35,u.PANEL2 if selected else u.PANEL)
+                if selected:u.rect(34,y,8,35,brand.accent)
+                u.text(54,y+10,item,brand.accent if selected else u.INK,2,max_chars=44)
+            u.rect(0,442,640,38,u.PANEL);u.rect(0,442,640,3,brand.accent)
+            u.text(18,454,"D-PAD MOVE   A OPEN   B PROVIDERS",u.INK,1,max_chars=98);u.present();e=u.event()
+            if e=="up":idx=(idx-1)%len(items)
+            elif e=="down":idx=(idx+1)%len(items)
+            elif e in ("a","done"):return items[idx]
+            elif e in ("b","cancel","quit"):return None
 
     def footer(self,hint="D-PAD MOVE   A SELECT   B BACK"):
         u=self.ui; u.rect(0,442,640,38,u.PANEL); u.rect(0,442,640,3,u.PINK); u.text(18,454,hint,u.INK,1,max_chars=98)
@@ -317,7 +415,9 @@ class PixelCockpit:
 
     def new_session(self):
         p=self.pick("NEW / PROVIDER",self.cfg.providers,lambda x:f"{x.label}  [{x.auth}]")
-        if not p:return
+        if p:self.provider_hub(p)
+
+    def start_provider_session(self,p:Provider):
         if p.supports_auth("token-env") and not p.supports_auth("oauth-device") and not self.secrets.has(p.id):
             self.toast("ACCESS CREDENTIAL REQUIRED - OPENING ADVANCED LOGIN"); self.api_login(p)
             if not self.secrets.has(p.id):return
@@ -340,6 +440,63 @@ class PixelCockpit:
         except ValueError as e:self.toast(str(e));return
         self.status=f"LAUNCHING {target.display}"; self.interactive(target.argv); self.status=f"DETACHED FROM {p.label}"
 
+    def provider_hub(self,p:Provider):
+        modes=self.cfg.modes_for(p);remote_modes=[m for m in modes if m.is_remote]
+        actions=provider_actions(p,modes)
+        while True:
+            act=self.provider_menu(p,actions)
+            if act in (None,"BACK"):return
+            if act=="START NEW SESSION":self.start_provider_session(p)
+            elif act=="OAUTH / ACCOUNT":self.provider_account(p,modes)
+            elif act=="REMOTE TARGETS":self.provider_targets(p,remote_modes,False)
+            elif act=="TEST CONNECTION":self.provider_targets(p,remote_modes,True)
+            elif act=="PROVIDER SKILLS":self.provider_skills(p,remote_modes)
+            elif act=="ACTIVE SESSIONS":self.provider_sessions(p)
+            elif act=="ABOUT PROVIDER":
+                brand=provider_brand(p.id);local=any(not m.is_remote for m in modes)
+                self.toast(brand.wordmark,[brand.tagline,f"COMMAND: {' '.join(p.command)}",f"LOCAL: {'YES' if local else 'NO'}  REMOTE TARGETS: {len(remote_modes)}",f"AUTH: {' + '.join(p.auth_methods or [p.auth])}","UNOFFICIAL HANDHELD CLIENT UI"])
+
+    def provider_account(self,p:Provider,modes:Sequence[Mode]):
+        targets=[m for m in modes if not m.is_remote or m.is_ssh]
+        if not targets:self.provider_login(p,None);return
+        mode=self.pick(f"{provider_brand(p.id).wordmark} ACCOUNT",targets,
+                       lambda m:f"{m.label} [{m.host or 'THIS HANDHELD'}]",
+                       subtitle="CHOOSE WHERE THE PROVIDER CLI RUNS")
+        if mode:self.provider_login(p,mode.host if mode.is_ssh else None)
+
+    def provider_targets(self,p:Provider,modes:Sequence[Mode],test:bool):
+        mode=self.pick(f"{provider_brand(p.id).wordmark} TARGETS",modes,
+                       lambda m:f"{m.label} [{m.host or m.endpoint or m.transport}]",
+                       subtitle="TEST A TARGET" if test else "CONFIGURED REMOTE EXECUTION TARGETS")
+        if not mode:return
+        if test and mode.is_ssh:
+            self.draw_busy(f"TESTING {mode.host}");ok,msg=remote.diagnose(mode.host or "")
+            self.toast(("READY: " if ok else "NOT READY: ")+msg)
+        elif test:self.toast("REMOTE GATEWAY CONFIGURED",[f"TRANSPORT: {mode.transport}",f"ENDPOINT: {mode.endpoint or '-'}","LIVE HEALTH IS CHECKED WHEN A SESSION STARTS."])
+        else:self.toast(mode.label,[f"TRANSPORT: {mode.transport}",f"ADDRESS: {mode.host or mode.endpoint or '-'}",f"WORKDIR: {mode.default_workdir or '-'}"])
+
+    def provider_skills(self,p:Provider,remote_modes:Sequence[Mode]):
+        targets=["SYNC ON THIS HANDHELD"]
+        targets.extend(f"SYNC TO {m.label}" for m in remote_modes if m.is_ssh)
+        choice=self.pick(f"{provider_brand(p.id).wordmark} SKILLS",targets,subtitle=f"SHARED HUB -> {p.skills_dir}")
+        if choice=="SYNC ON THIS HANDHELD":
+            ok,msg=skills.link_into(self.hub,p.skills_dir or "");self.toast("SKILLS LINKED" if ok else "SKILL LINK FAILED",[msg])
+        elif choice:
+            label=choice.removeprefix("SYNC TO ");mode=next((m for m in remote_modes if m.label==label and m.is_ssh),None)
+            if mode:
+                self.draw_busy(f"SYNCING TO {mode.host}");ok,msg=remote.sync_hub(mode.host or "",self.hub)
+                if ok:ok,msg=remote.link_remote(mode.host or "",p.skills_dir or "")
+                self.toast("REMOTE SKILLS LINKED" if ok else "REMOTE SKILL SYNC FAILED",[msg])
+
+    def provider_sessions(self,p:Provider):
+        self.draw_busy(f"SCANNING {p.label}")
+        prefix=f"handai-{p.id}-";found=[s for s in tmux.list_all(self.cfg.modes) if s.name.startswith(prefix)]
+        session=self.pick(f"{provider_brand(p.id).wordmark} SESSIONS",found,lambda s:f"{'*' if s.attached else 'O'} {s.name} [{s.host or 'DEVICE'}]")
+        if not session:return
+        act=self.pick(session.name,["ATTACH","KILL SESSION"])
+        if act=="ATTACH":self.interactive(tmux.attach_argv(session))
+        elif act=="KILL SESSION":self.toast("SESSION KILLED" if tmux.kill(session) else "KILL FAILED")
+
     def sessions(self):
         self.draw_busy("SCANNING SESSIONS")
         found=tmux.list_all(self.cfg.modes)
@@ -355,7 +512,7 @@ class PixelCockpit:
             local=next((m for m in self.cfg.modes if not m.is_remote),None)
             candidates=[p for p in self.cfg.providers if local and p.allows_mode(local.id)]
             p=self.pick("LOCAL PROVIDERS",candidates,self.provider_label,subtitle="RUNS ON THIS HANDHELD")
-            if p:self.provider_login(p,None)
+            if p:self.provider_hub(p)
         elif area=="REMOTE PROVIDERS":
             remote_modes=[m for m in self.cfg.modes if m.is_remote]
             candidates=[p for p in self.cfg.providers
@@ -363,12 +520,7 @@ class PixelCockpit:
             p=self.pick("REMOTE PROVIDERS",candidates,
                         lambda p:f"REMOTE {self.provider_label(p)}",
                         subtitle="CHOOSE THE AGENT ON THE OTHER DEVICE")
-            if not p:return
-            modes=[m for m in remote_modes if m in self.cfg.modes_for(p)]
-            mode=self.pick(f"REMOTE {p.label}",modes,
-                           lambda m:f"{m.label} [{m.host}]",
-                           subtitle="CHOOSE THE DEVICE RUNNING THE AGENT")
-            if mode:self.provider_login(p,mode.host)
+            if p:self.provider_hub(p)
 
     def provider_label(self,p):
         ready=p.supports_auth("oauth-device") or self.secrets.has(p.id)
@@ -675,6 +827,11 @@ class PixelCockpit:
     def run(self):
         self.unlock_credentials()
         self.first_run()
+        # Optional kiosk/development deep-link; normal navigation uses the same hub.
+        direct=os.environ.pop("HANDAI_PROVIDER_HOME","")
+        if direct:
+            provider=next((p for p in self.cfg.providers if p.id==direct),None)
+            if provider:self.provider_hub(provider)
         menu=[("NEW SESSION",self.new_session),("ACTIVE SESSIONS",self.sessions),("PROVIDERS / LOGIN",self.providers),("SKILLS HUB",self.skill_screen),("NETWORK",self.network),("PHONE KEYBOARD",self.phone_keyboard),("INSTALL LOCAL AGENTS",self.install_agents),("SETTINGS",self.settings),("QUIT",None)]
         idx=0
         while True:

@@ -13,7 +13,7 @@ Ebene 3  SoC-Image               echte RG35xxSP        selten     ── nur SoC
 
 Unit-Tests (laufen überall, auch Windows):
 ```bash
-make test        # 68 Tests: Router, Provider, Secrets, Hardware/Power, tmux, Sicherheit …
+make test        # 70 Tests: Router, Provider-Homes, Hardware/Power, tmux, Sicherheit …
 ```
 
 Cockpit interaktiv **komplett offline** durchklicken — Fake-Provider, keine Accounts,
