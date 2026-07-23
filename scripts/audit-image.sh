@@ -121,6 +121,10 @@ for path in \
 		echo "boot diagnostic executable bit missing: /$path" >&2
 		exit 1
 	}
+	sh -n "$TMP/rootfs/$path" || {
+		echo "boot diagnostic shell syntax invalid: /$path" >&2
+		exit 1
+	}
 done
 grep -q 'HANDAI NEXUS' "$TMP/rootfs/opt/handai/handai/pixelgui.py" || {
 	echo "boot-art-matched default theme is missing" >&2

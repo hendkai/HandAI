@@ -38,7 +38,7 @@ append_boot_log() {
 			dmesg 2>/dev/null | tail -n 120
 			echo "--- ERROR SNAPSHOT END ---"
 		fi
-	fi >>"$BOOT_LOG"
+	} >>"$BOOT_LOG"
 	sync "$BOOT_LOG" 2>/dev/null || sync
 	mount -o remount,ro /boot 2>/dev/null ||
 		mount -o remount,ro "$BOOT_DEV" /boot 2>/dev/null ||

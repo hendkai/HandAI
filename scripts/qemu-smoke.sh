@@ -34,6 +34,12 @@ echo "----- serial log (tail) -----"
 tail -n 40 "$LOG" || true
 echo "-----------------------------"
 
+FATAL='syntax error|Traceback \(most recent call last\)|GUI FAILED|Kernel panic|not syncing'
+if grep -Eq "$FATAL" "$LOG"; then
+	echo "SMOKE FAIL: fatal userspace/kernel error found in serial output" >&2
+	grep -En "$FATAL" "$LOG" | tail -n 20 >&2
+	exit 1
+fi
 if grep -qF "$MARKER" "$LOG"; then
 	echo "SMOKE PASS: cockpit reached boot marker"
 	exit 0
