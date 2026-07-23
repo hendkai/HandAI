@@ -163,6 +163,11 @@ grep -q '"command": \["codex", "cloud"\]' \
 	echo "current Codex Cloud command is missing" >&2
 	exit 1
 }
+if grep -qE 'dev@devbox\.local|\$\{HANDAI_CLOUD_HOST\}' \
+	"$TMP/rootfs/etc/handai/handai.json"; then
+	echo "device config still exposes an unconfigured example remote target" >&2
+	exit 1
+fi
 grep -q '"label": "GITHUB.COM COPILOT"' \
 	"$TMP/rootfs/etc/handai/handai.json" || {
 	echo "headless GitHub Copilot login profile is missing" >&2
