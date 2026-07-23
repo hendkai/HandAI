@@ -39,6 +39,7 @@ require_file() {
 for path in \
 	opt/handai/handai/pixelgui.py \
 	opt/handai/handai/audio.py \
+	opt/handai/handai/oauth.py \
 	opt/handai/handai/music.py \
 	opt/handai/handai/assets/music/01-pocket-signal.wav \
 	opt/handai/handai/assets/music/02-copper-constellation.wav \

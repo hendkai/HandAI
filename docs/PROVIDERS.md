@@ -8,8 +8,13 @@ Eintrag in `~/.config/handai/handai.json` unter `providers`:
   "id": "meinagent",
   "label": "Mein Agent",
   "command": ["meinagent", "run"],
-  "auth": "token-env",
-  "token_env": "MEINAGENT_KEY",
+  "auth": "oauth-device",
+  "oauth_profiles": [
+    {
+      "label": "MEIN ABO",
+      "command": ["meinagent", "login", "--device-code"]
+    }
+  ],
   "allowed_modes": ["devbox", "cloud"]
 }
 ```
@@ -17,19 +22,24 @@ Eintrag in `~/.config/handai/handai.json` unter `providers`:
 Felder:
 - `command` — argv zum Starten (bereits gesplittet, kein Shell-String).
 - `auth` — bevorzugte Methode: `oauth-device` | `token-env` | `none`.
-- `auth_methods` — optional mehrere angebotene Methoden, zum Beispiel
-  `["oauth-device", "token-env"]`. Im Login-Menü erscheinen dann OAuth **und**
-  API-Key nebeneinander. Alte Configs mit nur `auth` bleiben kompatibel.
-- `token_env` — nur bei `token-env`: Env-Var, aus der die CLI ihr Credential liest.
-- `login_command` — nur bei `oauth-device`: argv des interaktiven Login-Flows.
+- `auth_methods` — optionale Liste unterstützter Methoden. Die ausgelieferte
+  Konfiguration verwendet nur `["oauth-device"]`.
+- `oauth_profiles` — ein oder mehrere konkrete Account-/Abo-Logins mit Label und
+  argv. Bei mehreren Profilen zeigt das Pixel-GUI zuerst eine Auswahl.
+- `login_command` — rückwärtskompatibler einzelner OAuth-Befehl; neue Einträge
+  sollten `oauth_profiles` verwenden.
+- `token_env` — nur für eigene `token-env`-Provider; nicht Teil der Standard-GUI.
 - `allowed_modes` — leer = alle Modi erlaubt; sonst Whitelist von Modus-IDs.
 
 ## Auth-Fluss im Cockpit
 - **oauth-device**: *Providers/Login* → Provider wählen → HandAI startet
-  `login_command` interaktiv. Der Provider zeigt Device-Code + URL, du öffnest sie am
-  Handy. Kein Token wird in HandAI gespeichert.
-- **token-env**: *Providers/Login* → Provider wählen → On-Screen-Keyboard → Token wird
-  im Secret-Store (`$HANDAI_STATE/secrets.json`, 0600) abgelegt.
+  die ausgewählte Provider-CLI unsichtbar im Hintergrund. URL, QR-Code,
+  Device-Code und Live-Status erscheinen im 640×480-Pixel-GUI. Wenn ein Browser
+  einen Rückgabecode anzeigt, sendet **A → Paste Login Code** ihn über die
+  Bildschirmtastatur an die wartende CLI. Kein OAuth-Token wird in HandAI
+  gespeichert oder angezeigt.
+- **token-env**: bleibt als Konfigurationsmöglichkeit für eigene Integrationen
+  erhalten, wird von den mitgelieferten AI-Providern aber nicht angeboten.
 
 OAuth kann wahlweise auf dem Handheld oder direkt auf einem erlaubten SSH-Host
 gestartet werden. Das ist wichtig, weil die CLI ihre erneuerbaren OAuth-Daten auf
@@ -40,13 +50,15 @@ Das Login-Menü trennt **Local Providers** und **Remote Providers**. Im Remote-B
 wird zuerst Devbox oder Cloud gewählt; anschließend erscheinen ausschließlich die
 für dieses Ziel erlaubten Provider und die Login-Aktion wird direkt dort ausgeführt.
 
-Die ausgelieferte Beispielkonfiguration bietet beide Wege für alle sechs Einträge:
+Die ausgelieferte Beispielkonfiguration bietet ausschließlich echte
+Account-/Subscription-Flows:
 
-- Claude Code: Anthropic-OAuth oder `ANTHROPIC_API_KEY`.
-- Codex: ChatGPT/Device-OAuth oder `OPENAI_API_KEY`.
-- Hermes: Nous-Portal-OAuth oder `OPENROUTER_API_KEY`.
-- OpenCode: interaktiver Provider-Login oder `OPENCODE_API_KEY`.
-- OpenClaw: interaktive Modell-Anmeldung oder `OPENAI_API_KEY`.
+- Claude Code: Claude-Subscription über `claude auth login`.
+- Codex: ChatGPT/Codex-Subscription über `codex login --device-auth`.
+- Hermes: Nous Portal, OpenAI Codex oder xAI über `hermes auth add … --type oauth`.
+- OpenCode: ChatGPT Pro/Plus, SuperGrok oder GitHub Copilot; alle Auswahlen
+  werden vorab als headless/device-tauglicher CLI-Aufruf festgelegt.
+- OpenClaw: ChatGPT/Codex über den offiziellen `--device-code`-Flow.
 
 ## Verwaltete Remoteziele
 
@@ -61,9 +73,8 @@ Unter **Settings → Remote Devices** können ohne JSON-Änderung drei Zieltypen
   `hermes serve`-Backends. Öffentlich ist `https://` Pflicht; `http://` bleibt auf
   private LAN-/Tailscale-Adressen beschränkt.
 
-OAuth bleibt der normale Loginweg. Manuell hinterlegte Zugriffstokens befinden sich
-im GUI ausschließlich unter **Advanced**. Der Secret-Store kann in den Settings mit
-einem Boot-PIN verschlüsselt werden.
+OAuth ist der normale Loginweg. Gateway- und Remote-Service-Tokens sind davon
+getrennte Zugangsdaten und bleiben im PIN-fähigen Secret-Store.
 
 ## Remote-Token-Bereitstellung (wichtig)
 Bei `token-env` **+ ssh-Modus** darf das Token **nicht** inline im ssh-Kommando stehen
@@ -82,14 +93,15 @@ Bei `token-env` **+ ssh-Modus** darf das Token **nicht** inline im ssh-Kommando 
 > Gerät selbst (`cockpit._env_prefix`), sie taucht nur lokal auf.
 
 ## Die aktuell vordefinierten Provider (`config/handai.example.json`)
-| id            | auth         | Modi           | Anmerkung                                  |
-|---------------|--------------|----------------|--------------------------------------------|
-| claude        | OAuth + Key  | local, devbox, cloud | `claude login` / `ANTHROPIC_API_KEY`  |
-| codex         | OAuth + Key  | local, devbox  | Device-Auth / `OPENAI_API_KEY`             |
-| codex-remote  | OAuth + Key  | devbox, cloud  | Device-Auth / `OPENAI_API_KEY`             |
-| hermes        | OAuth + Key  | local, devbox, cloud | Nous Portal / `OPENROUTER_API_KEY`    |
-| opencode      | OAuth + Key  | local, devbox  | Provider-Login / `OPENCODE_API_KEY`        |
-| openclaw      | OAuth + Key  | local, devbox, cloud | Modell-Login / `OPENAI_API_KEY`       |
+| id            | auth       | Modi           | Native GUI-Profile |
+|---------------|------------|----------------|--------------------|
+| claude        | OAuth only | local, devbox, cloud | Claude Subscription |
+| codex         | OAuth only | local, devbox  | ChatGPT/Codex Device Code |
+| codex-remote  | OAuth only | devbox, cloud  | ChatGPT/Codex Device Code |
+| hermes        | OAuth only | local, devbox, cloud | Nous, OpenAI Codex, xAI |
+| opencode      | OAuth only | local, devbox  | ChatGPT, SuperGrok, GitHub Copilot |
+| openclaw      | OAuth only | local, devbox, cloud | OpenAI ChatGPT/Codex Device Code |
 
-Die exakten `command`/`login_command`/`token_env` je Tool ggf. an die reale CLI
-anpassen — die genannten sind sinnvolle Defaults, keine garantierten Flags.
+Die Profile wurden gegen die im Juli 2026 installierten CLI-Hilfen und die
+jeweilige Primärdokumentation geprüft. Sie sind datengetrieben, damit spätere
+CLI-Änderungen ohne Umbau des GUI-Runners angepasst werden können.

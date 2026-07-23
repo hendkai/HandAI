@@ -22,6 +22,16 @@ AUTH_KINDS = ("oauth-device", "token-env", "none")
 
 
 @dataclass(frozen=True)
+class OAuthProfile:
+    """One concrete, non-shell OAuth command exposed by a provider CLI."""
+
+    label: str
+    command: list[str]
+    initial_input: str = ""
+    requires_tty: bool = False
+
+
+@dataclass(frozen=True)
 class Provider:
     id: str
     label: str
@@ -35,6 +45,8 @@ class Provider:
     token_env: Optional[str] = None
     # For oauth-device: the argv that starts the interactive login flow.
     login_command: Optional[list[str]] = None
+    # Provider-specific OAuth choices. Old configs can keep login_command.
+    oauth_profiles: list[OAuthProfile] = field(default_factory=list)
     # Which mode ids this provider is allowed to run under. Empty = all modes.
     allowed_modes: list[str] = field(default_factory=list)
     # Extra fixed env passed to every launch of this provider.
@@ -80,6 +92,20 @@ def parse_providers(raw: list[dict]) -> list[Provider]:
             raise ValueError(f"provider {p.get('id')!r}: unknown auth {unknown[0] if unknown else auth!r}")
         if "none" in methods and len(methods)>1:
             raise ValueError(f"provider {p.get('id')!r}: auth 'none' cannot be combined")
+        profiles = [
+            OAuthProfile(
+                label=str(profile.get("label") or p.get("label") or p["id"]),
+                command=list(profile["command"]),
+                initial_input=str(profile.get("initial_input") or ""),
+                requires_tty=bool(profile.get("requires_tty", False)),
+            )
+            for profile in p.get("oauth_profiles", [])
+        ]
+        if any(not profile.command for profile in profiles):
+            raise ValueError(f"provider {p.get('id')!r}: empty oauth profile command")
+        login_command = p.get("login_command")
+        if "oauth-device" in methods and not profiles and login_command:
+            profiles = [OAuthProfile(str(p.get("label", p["id"])), list(login_command))]
         out.append(
             Provider(
                 id=p["id"],
@@ -88,7 +114,8 @@ def parse_providers(raw: list[dict]) -> list[Provider]:
                 auth=auth,
                 auth_methods=methods,
                 token_env=p.get("token_env"),
-                login_command=p.get("login_command"),
+                login_command=list(login_command) if login_command else None,
+                oauth_profiles=profiles,
                 allowed_modes=list(p.get("allowed_modes", [])),
                 env=dict(p.get("env", {})),
                 skills_dir=p.get("skills_dir"),

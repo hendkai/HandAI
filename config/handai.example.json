@@ -12,9 +12,11 @@
       "label": "Claude Code",
       "command": ["claude"],
       "auth": "oauth-device",
-      "auth_methods": ["oauth-device", "token-env"],
-      "token_env": "ANTHROPIC_API_KEY",
-      "login_command": ["claude", "login"],
+      "auth_methods": ["oauth-device"],
+      "login_command": ["claude", "auth", "login"],
+      "oauth_profiles": [
+        {"label": "CLAUDE SUBSCRIPTION", "command": ["claude", "auth", "login"]}
+      ],
       "allowed_modes": ["local", "devbox", "cloud"],
       "skills_dir": "~/.claude/skills"
     },
@@ -23,9 +25,11 @@
       "label": "Codex CLI",
       "command": ["codex"],
       "auth": "oauth-device",
-      "auth_methods": ["oauth-device", "token-env"],
-      "token_env": "OPENAI_API_KEY",
+      "auth_methods": ["oauth-device"],
       "login_command": ["codex", "login", "--device-auth"],
+      "oauth_profiles": [
+        {"label": "CHATGPT / CODEX SUBSCRIPTION", "command": ["codex", "login", "--device-auth"]}
+      ],
       "allowed_modes": ["local", "devbox"],
       "skills_dir": "~/.codex/skills"
     },
@@ -34,9 +38,11 @@
       "label": "Codex (remote/cloud)",
       "command": ["codex", "--cloud"],
       "auth": "oauth-device",
-      "auth_methods": ["oauth-device", "token-env"],
-      "token_env": "OPENAI_API_KEY",
+      "auth_methods": ["oauth-device"],
       "login_command": ["codex", "login", "--device-auth"],
+      "oauth_profiles": [
+        {"label": "CHATGPT / CODEX SUBSCRIPTION", "command": ["codex", "login", "--device-auth"]}
+      ],
       "allowed_modes": ["devbox", "cloud"]
     },
     {
@@ -44,9 +50,13 @@
       "label": "Hermes Agent",
       "command": ["hermes"],
       "auth": "oauth-device",
-      "auth_methods": ["oauth-device", "token-env"],
-      "token_env": "OPENROUTER_API_KEY",
-      "login_command": ["hermes", "setup", "--portal"],
+      "auth_methods": ["oauth-device"],
+      "login_command": ["hermes", "auth", "add", "nous", "--type", "oauth", "--no-browser"],
+      "oauth_profiles": [
+        {"label": "NOUS PORTAL", "command": ["hermes", "auth", "add", "nous", "--type", "oauth", "--no-browser"]},
+        {"label": "OPENAI CODEX", "command": ["hermes", "auth", "add", "openai-codex", "--type", "oauth", "--no-browser"]},
+        {"label": "XAI / GROK", "command": ["hermes", "auth", "add", "xai-oauth", "--type", "oauth", "--no-browser", "--manual-paste"]}
+      ],
       "allowed_modes": ["local", "devbox", "cloud"],
       "skills_dir": "~/.hermes/skills"
     },
@@ -55,9 +65,13 @@
       "label": "opencode",
       "command": ["opencode"],
       "auth": "oauth-device",
-      "auth_methods": ["oauth-device", "token-env"],
-      "token_env": "OPENCODE_API_KEY",
-      "login_command": ["opencode", "auth", "login"],
+      "auth_methods": ["oauth-device"],
+      "login_command": ["opencode", "auth", "login", "-p", "openai", "-m", "ChatGPT Pro/Plus (headless)"],
+      "oauth_profiles": [
+        {"label": "OPENAI CHATGPT PRO/PLUS", "command": ["opencode", "auth", "login", "-p", "openai", "-m", "ChatGPT Pro/Plus (headless)"]},
+        {"label": "XAI SUPERGROK", "command": ["opencode", "auth", "login", "-p", "xai", "-m", "xAI Grok OAuth (Headless / Remote / VPS)"]},
+        {"label": "GITHUB COPILOT", "command": ["opencode", "auth", "login", "-p", "github-copilot", "-m", "Login with GitHub Copilot"], "initial_input": "\r"}
+      ],
       "allowed_modes": ["local", "devbox"],
       "skills_dir": "~/.config/opencode/skills"
     },
@@ -66,9 +80,11 @@
       "label": "OpenClaw",
       "command": ["openclaw", "tui"],
       "auth": "oauth-device",
-      "auth_methods": ["oauth-device", "token-env"],
-      "token_env": "OPENAI_API_KEY",
-      "login_command": ["openclaw", "models", "auth", "login"],
+      "auth_methods": ["oauth-device"],
+      "login_command": ["openclaw", "models", "auth", "login", "--provider", "openai", "--device-code"],
+      "oauth_profiles": [
+        {"label": "OPENAI CHATGPT / CODEX", "command": ["openclaw", "models", "auth", "login", "--provider", "openai", "--device-code"], "requires_tty": true}
+      ],
       "allowed_modes": ["local", "devbox", "cloud"],
       "skills_dir": "~/.openclaw/skills"
     }

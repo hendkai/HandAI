@@ -126,7 +126,7 @@ python -m handai --ui pixel
   Session, OAuth/Account, Remote-Ziele, Verbindungstest, Skills, Sessions und Info
   gebündelt im jeweiligen Provider-Stil.
 - ✅ **Remote-first Cockpit**, voll d-pad-navigierbar: New session · Sessions (attach/kill) ·
-  Providers/Login (getrennte Local-/Remote-Bereiche, OAuth + API-Key) · Network · Settings.
+  Providers/Login (getrennte Local-/Remote-Bereiche, native OAuth-QR-Flows) · Network · Settings.
 - ✅ **Distro-Quelle fertig**: Buildroot external tree unter `handai-os/` — drei
   defconfigs (full / **remote** / qemu), handai-Paket, Init (Boot→Cockpit, kein getty,
   Exec-Bit-Fix, `/data`-Mount), WLAN-Bringup + Preflight, Agent-Installer, SD-Layout,
@@ -156,6 +156,6 @@ python -m handai --ui pixel
   optional PIN-verschlüsselter Credential-Store und einmalige QR-Handy-Kopplung.
 
 ## Provider-CLI-Flags
-Die `command`/`login_command`/`token_env` in der Config sind sinnvolle Defaults, keine
-garantierten Flags — beim ersten echten Einsatz je Tool an die reale CLI anpassen
-(rein Config, kein Code). Siehe [docs/PROVIDERS.md](docs/PROVIDERS.md).
+Die `command`/`oauth_profiles` in der Config sind gegen aktuelle CLI-Hilfen und
+Herstellerdokumentation geprüfte Defaults. Bei einem späteren CLI-Upgrade werden
+sie rein datengetrieben angepasst. Siehe [docs/PROVIDERS.md](docs/PROVIDERS.md).

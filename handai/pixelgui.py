@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Sequence, TypeVar
 
-from . import audio, compose, devices, diagnostics, hardware_report, music, network, phone, power, preferences, remote, skill_catalog, skills, tailscale, tmux
+from . import audio, compose, devices, diagnostics, hardware_report, music, network, oauth, phone, power, preferences, remote, skill_catalog, skills, tailscale, tmux
 from .config import Config, config_path
 from .providers import Mode, Provider
 from .router import build_target
@@ -191,6 +191,7 @@ class SDL:
         s.SDL_RenderFillRect.argtypes=[ctypes.c_void_p,ctypes.POINTER(Rect)]
         s.SDL_PollEvent.argtypes=[ctypes.c_void_p]; s.SDL_PollEvent.restype=ctypes.c_int
         s.SDL_WaitEvent.argtypes=[ctypes.c_void_p]; s.SDL_WaitEvent.restype=ctypes.c_int
+        s.SDL_WaitEventTimeout.argtypes=[ctypes.c_void_p,ctypes.c_int]; s.SDL_WaitEventTimeout.restype=ctypes.c_int
         s.SDL_NumJoysticks.restype=ctypes.c_int; s.SDL_IsGameController.argtypes=[ctypes.c_int]
         s.SDL_GameControllerOpen.argtypes=[ctypes.c_int]; s.SDL_GameControllerOpen.restype=ctypes.c_void_p
         s.SDL_GameControllerClose.argtypes=[ctypes.c_void_p]
@@ -230,22 +231,31 @@ class SDL:
             x+=6*scale
     def clear(self): self.color(self.BG); self.s.SDL_RenderClear(self.renderer)
     def present(self): self.s.SDL_RenderPresent(self.renderer)
+    def _decode_event(self,buf):
+        typ=int.from_bytes(bytes(buf[0:4]),"little")
+        if typ==0x100:return "quit"
+        if typ==0x300:
+            scan=int.from_bytes(bytes(buf[16:20]),"little",signed=True)
+            key=int.from_bytes(bytes(buf[20:24]),"little",signed=True)
+            action={1073741906:"up",1073741905:"down",1073741904:"left",1073741903:"right",
+                    13:"done",1073741912:"done",32:"a",65:"a",97:"a",66:"b",98:"b",
+                    27:"cancel",8:"b",81:"quit",113:"quit"}.get(key)
+            return action or {4:"a",5:"b",40:"done",41:"cancel",42:"b",44:"a"}.get(scan,"none")
+        if typ==0x651:return self.button_map.get(buf[12],"none")
+        return "none"
+
     def event(self):
         buf=(ctypes.c_uint8*64)()
         while self.s.SDL_WaitEvent(ctypes.byref(buf)):
-            typ=int.from_bytes(bytes(buf[0:4]),"little")
-            if typ==0x100: return "quit"
-            if typ==0x300:
-                scan=int.from_bytes(bytes(buf[16:20]),"little",signed=True)
-                key=int.from_bytes(bytes(buf[20:24]),"little",signed=True)
-                action={1073741906:"up",1073741905:"down",1073741904:"left",1073741903:"right",
-                        13:"done",1073741912:"done",32:"a",65:"a",97:"a",66:"b",98:"b",
-                        27:"cancel",8:"b",81:"quit",113:"quit"}.get(key)
-                return action or {4:"a",5:"b",40:"done",41:"cancel",42:"b",44:"a"}.get(scan,"none")
-            if typ==0x651:
-                button=buf[12]
-                return self.button_map.get(button,"none")
+            return self._decode_event(buf)
         return "quit"
+
+    def event_timeout(self,milliseconds=250):
+        """Wait briefly so background login/status screens can keep repainting."""
+        buf=(ctypes.c_uint8*64)()
+        if self.s.SDL_WaitEventTimeout(ctypes.byref(buf),milliseconds):
+            return self._decode_event(buf)
+        return "timeout"
 
     def raw_button(self)->int|None:
         """Wait for one controller button; Escape cancels calibration."""
@@ -369,7 +379,7 @@ class PixelCockpit:
         return out or [""]
 
     def prompt(self,title:str,initial="",secret=False)->str|None:
-        chars=list("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 /.,_-:@#+~")
+        chars=list("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 /.,_-:@#+~?=&%")
         cols=12; value=initial; pos=0
         while True:
             self.chrome(title,"ON-SCREEN KEYBOARD")
@@ -406,9 +416,85 @@ class PixelCockpit:
         os.environ["HANDAI_SKILLS"]=str(self.hub)
 
     def oauth_login(self,p:Provider,host:str|None=None):
-        if not p.login_command:self.toast("NO OAUTH LOGIN COMMAND CONFIGURED");return
-        argv=p.login_command if not host else remote.ssh_argv(host,shlex.join(p.login_command),tty=True)
-        self.interactive(argv);self.status=f"RAN {p.label} OAUTH"+(f" ON {host}" if host else "")
+        profiles=p.oauth_profiles
+        if not profiles:
+            self.toast("NO NATIVE OAUTH PROFILE CONFIGURED");return
+        profile=(profiles[0] if len(profiles)==1 else
+                 self.pick(f"{provider_brand(p.id).wordmark} OAUTH",profiles,
+                           lambda item:item.label,
+                           subtitle="CHOOSE SUBSCRIPTION / ACCOUNT PROVIDER"))
+        if not profile:return
+        argv=(profile.command if not host else
+              remote.ssh_argv(
+                  host,
+                  shlex.join(profile.command),
+                  batch=True,
+                  tty=profile.requires_tty,
+              ))
+        session=oauth.LoginSession(
+            argv,initial_input=profile.initial_input,requires_tty=profile.requires_tty
+        ).start()
+        qr_url=None;matrix=None;completion_ack=False
+        self.music.pause()
+        try:
+            while True:
+                snap=session.snapshot()
+                if snap.state=="completing" and not completion_ack:
+                    session.send("");completion_ack=True
+                if snap.url and snap.url!=qr_url:
+                    qr_url=snap.url
+                    try:matrix=phone.qr_matrix(qr_url)
+                    except RuntimeError:matrix=None
+                u=self.ui
+                self.chrome(f"{provider_brand(p.id).wordmark} LOGIN",
+                            f"{profile.label}  @  {host or 'THIS HANDHELD'}")
+                if matrix:
+                    size=len(matrix);scale=max(1,min(6,220//size));span=size*scale;x=28;y=111
+                    u.rect(x-7,y-7,span+14,span+14,(255,255,255))
+                    for row,bits in enumerate(matrix):
+                        for col,on in enumerate(bits):
+                            if on:u.rect(x+col*scale,y+row*scale,scale,scale,(0,0,0))
+                    tx=286;u.text(tx,112,"SCAN WITH PHONE",u.CYAN,2,max_chars=27)
+                    if snap.code:
+                        u.text(tx,153,"DEVICE CODE",u.MUTED,1,max_chars=32)
+                        u.text(tx,174,snap.code,u.YELLOW,3,max_chars=18)
+                    u.text(tx,226,"LOGIN URL",u.MUTED,1,max_chars=32)
+                    for i,line in enumerate(self.wrap(qr_url or "",28)[:4]):
+                        u.text(tx,244+i*17,line,u.INK,1,max_chars=30)
+                else:
+                    u.frame(74,112,492,128,u.CYAN,4)
+                    u.text(119,145,"STARTING SECURE LOGIN",u.YELLOW,3,max_chars=30)
+                    u.text(155,200,"WAITING FOR PROVIDER URL",u.MUTED,2,max_chars=34)
+                state_text={"starting":"STARTING","waiting":"WAITING FOR PHONE",
+                            "completing":"FINISHING LOGIN","success":"LOGIN COMPLETE",
+                            "failed":"LOGIN FAILED","cancelled":"CANCELLED"}.get(snap.state,snap.state.upper())
+                u.text(28,337,state_text,u.GREEN if snap.state=="success" else u.PINK if snap.state=="failed" else u.CYAN,2,max_chars=42)
+                for i,line in enumerate(oauth.display_lines(snap.output,3,70)):
+                    u.text(28,365+i*17,line,u.MUTED,1,max_chars=93)
+                self.footer("SCAN QR  |  A ENTER RETURNED CODE  |  B CANCEL")
+                u.present()
+                if snap.done:
+                    break
+                event=u.event_timeout(250)
+                if event in ("b","cancel","quit"):
+                    session.cancel();break
+                if event in ("a","done"):
+                    value=self.prompt("PASTE LOGIN CODE")
+                    if value:session.send(value)
+            final=session.wait(2)
+            if final.state=="success":
+                self.status=f"{p.label} OAUTH READY"+(f" ON {host}" if host else "")
+                self.toast("OAUTH LOGIN COMPLETE",[
+                    f"PROVIDER: {p.label}",f"ACCOUNT: {profile.label}",
+                    f"TARGET: {host or 'THIS HANDHELD'}",
+                    "CREDENTIALS WERE STORED BY THE PROVIDER CLI.",
+                ])
+            elif final.state!="cancelled":
+                detail=oauth.display_lines(final.output,7,42)
+                self.toast("OAUTH LOGIN FAILED",detail or ["PROVIDER CLI RETURNED AN ERROR."])
+        finally:
+            if not session.snapshot().done:session.cancel()
+            self.music.resume()
 
     def api_login(self,p:Provider):
         if not p.token_env:self.toast("NO ACCESS TOKEN VARIABLE CONFIGURED");return
@@ -1113,13 +1199,19 @@ class PixelCockpit:
 
     def run(self):
         self.unlock_credentials()
-        self.first_run()
-        self.music.play("main")
-        # Optional kiosk/development deep-link; normal navigation uses the same hub.
+        # Kiosk/development deep-links intentionally bypass onboarding so a
+        # single provider screen can be exercised in automated GUI tests.
         direct=os.environ.pop("HANDAI_PROVIDER_HOME","")
+        direct_oauth=os.environ.pop("HANDAI_OAUTH_HOME","")
+        if not direct and not direct_oauth:
+            self.first_run()
+        self.music.play("main")
         if direct:
             provider=next((p for p in self.cfg.providers if p.id==direct),None)
             if provider:self.provider_hub(provider)
+        if direct_oauth:
+            provider=next((p for p in self.cfg.providers if p.id==direct_oauth),None)
+            if provider:self.oauth_login(provider)
         if os.environ.pop("HANDAI_VOICE_HOME","")=="1":self.voice_input()
         if os.environ.pop("HANDAI_AUDIO_HOME","")=="1":self.audio_settings()
         if os.environ.pop("HANDAI_MUSIC_HOME","")=="1":self.music_settings()

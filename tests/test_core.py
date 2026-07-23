@@ -8,7 +8,9 @@ from __future__ import annotations
 import json
 import os
 import struct
+import sys
 import tempfile
+import time
 import unittest
 import wave
 from pathlib import Path
@@ -20,8 +22,8 @@ import zipfile
 
 from handai.config import Config
 from handai.network import Network, detect_iface, parse_saved_networks, parse_scan_results
-from handai import audio, devices, diagnostics, hardware_report, music, power, preferences, skill_catalog, skills
-from handai.providers import Mode, Provider, parse_modes, parse_providers
+from handai import audio, devices, diagnostics, hardware_report, music, oauth, power, preferences, skill_catalog, skills
+from handai.providers import Mode, OAuthProfile, Provider, parse_modes, parse_providers
 from handai.remote import _export_line
 from handai.router import _cd_expr, build_target, session_name
 from handai.secrets import SecretStore
@@ -79,6 +81,26 @@ class TestProviders(unittest.TestCase):
         self.assertTrue(p.supports_auth("oauth-device"))
         self.assertTrue(p.supports_auth("token-env"))
 
+    def test_provider_specific_oauth_profiles(self):
+        p=parse_providers([{
+            "id":"multi","command":["multi"],"auth":"oauth-device",
+            "oauth_profiles":[
+                {"label":"ONE","command":["multi","login","one"]},
+                {"label":"TWO","command":["multi","login","two"],"initial_input":"\r",
+                 "requires_tty":True},
+            ],
+        }])[0]
+        self.assertEqual([profile.label for profile in p.oauth_profiles],["ONE","TWO"])
+        self.assertEqual(p.oauth_profiles[1].initial_input,"\r")
+        self.assertTrue(p.oauth_profiles[1].requires_tty)
+
+    def test_old_login_command_becomes_native_profile(self):
+        p=parse_providers([{
+            "id":"old","command":["old"],"auth":"oauth-device",
+            "login_command":["old","login"],
+        }])[0]
+        self.assertEqual(p.oauth_profiles,[OAuthProfile("old",["old","login"])])
+
     def test_none_cannot_be_combined(self):
         with self.assertRaises(ValueError):
             parse_providers([{"id":"bad","command":["bad"],"auth_methods":["none","token-env"]}])
@@ -89,6 +111,19 @@ class TestProviders(unittest.TestCase):
         self.assertFalse(p.allows_mode("cloud"))
         # empty allowed_modes = all allowed
         self.assertTrue(Provider(id="z", label="Z", command=["z"]).allows_mode("anything"))
+
+    def test_shipped_providers_are_oauth_only_and_have_native_profiles(self):
+        with tempfile.TemporaryDirectory() as state, patch.dict(os.environ,{"HANDAI_STATE":state}):
+            cfg=Config.load(Path(__file__).parents[1]/"config"/"handai.example.json")
+        self.assertEqual(len(cfg.providers),6)
+        for provider in cfg.providers:
+            self.assertEqual(provider.auth_methods,["oauth-device"],provider.id)
+            self.assertTrue(provider.oauth_profiles,provider.id)
+            self.assertFalse(provider.token_env,provider.id)
+        opencode=cfg.provider("opencode")
+        self.assertEqual(len(opencode.oauth_profiles),3)
+        self.assertTrue(any("headless" in " ".join(profile.command).lower()
+                            for profile in opencode.oauth_profiles))
 
 
 class TestPixelGuiPure(unittest.TestCase):
@@ -112,6 +147,118 @@ class TestPixelGuiPure(unittest.TestCase):
                   "hermes":"HERMES","opencode":"OPENCODE","openclaw":"OPENCLAW"}
         self.assertEqual({key:provider_brand(key).wordmark for key in expected},expected)
         self.assertEqual(provider_brand("custom-agent").wordmark,"AI AGENT")
+
+
+class TestNativeOAuth(unittest.TestCase):
+    def test_parse_device_url_code_and_success(self):
+        url,code,needs_input,success=oauth.parse_login_output(
+            "\x1b[32mGo to: https://auth.openai.com/codex/device\x1b[0m\n"
+            "Enter code: MBWN-KVSPQ\nWaiting for authorization"
+        )
+        self.assertEqual(url,"https://auth.openai.com/codex/device")
+        self.assertEqual(code,"MBWN-KVSPQ")
+        self.assertFalse(needs_input)
+        self.assertFalse(success)
+        self.assertTrue(oauth.parse_login_output("Login successful")[3])
+
+    def test_parse_callback_hostile_prompt(self):
+        url,_,needs_input,_=oauth.parse_login_output(
+            "Open https://claude.ai/oauth/authorize?x=1\nPaste code here if prompted:"
+        )
+        self.assertTrue(url.startswith("https://claude.ai/"))
+        self.assertTrue(needs_input)
+
+    def test_display_redacts_secret_material(self):
+        rendered="\n".join(oauth.display_lines("access_token=secret-value\nsk-1234567890abcdefghijkl"))
+        self.assertNotIn("secret-value",rendered)
+        self.assertNotIn("sk-123",rendered)
+
+    def test_background_login_completes_without_terminal(self):
+        script=(
+            "import time;"
+            "print('Go to https://example.test/device',flush=True);"
+            "print('Enter code: TEST-CODE',flush=True);"
+            "time.sleep(.1)"
+        )
+        session=oauth.LoginSession([sys.executable,"-c",script]).start()
+        final=session.wait(5)
+        self.assertEqual(final.state,"success")
+        self.assertEqual(final.code,"TEST-CODE")
+        self.assertEqual(final.url,"https://example.test/device")
+
+    def test_background_login_accepts_returned_code(self):
+        script=(
+            "print('Open https://example.test/login',flush=True);"
+            "print('Paste authorization code:',flush=True);"
+            "value=input();"
+            "raise SystemExit(0 if value=='ABCD-1234' else 2)"
+        )
+        session=oauth.LoginSession([sys.executable,"-c",script]).start()
+        deadline=time.time()+3
+        while not session.snapshot().needs_input and time.time()<deadline:
+            time.sleep(.02)
+        self.assertTrue(session.snapshot().needs_input)
+        self.assertTrue(session.send("ABCD-1234"))
+        self.assertEqual(session.wait(5).state,"success")
+
+    def test_cancel_is_visible_to_gui_immediately(self):
+        session=oauth.LoginSession(
+            [sys.executable,"-c","import time;time.sleep(10)"]
+        ).start()
+        deadline=time.time()+2
+        while session.snapshot().state=="starting" and time.time()<deadline:
+            time.sleep(.01)
+        session.cancel()
+        self.assertEqual(session.snapshot().state,"cancelled")
+        self.assertEqual(session.wait(5).state,"cancelled")
+
+    def test_background_login_supports_required_pseudo_terminal(self):
+        script=(
+            "import time;"
+            "print('Go to https://example.test/device',flush=True);"
+            "print('Enter code: PTY1-TEST',flush=True);"
+            "time.sleep(.1)"
+        )
+        session=oauth.LoginSession(
+            [sys.executable,"-c",script],requires_tty=True
+        ).start()
+        # ConPTY can keep its host alive briefly after the child exits.
+        final=session.wait(10)
+        self.assertEqual(final.state,"success")
+        self.assertEqual(final.code,"PTY1-TEST")
+        self.assertEqual(final.url,"https://example.test/device")
+
+    def test_pixel_gui_runs_oauth_without_interactive_terminal(self):
+        class FakeUI:
+            PANEL=(1,1,1);PANEL2=(2,2,2);INK=(3,3,3);MUTED=(4,4,4)
+            CYAN=(5,5,5);YELLOW=(6,6,6);PINK=(7,7,7);GREEN=(8,8,8);BG=(0,0,0)
+            def clear(self):pass
+            def rect(self,*_):pass
+            def frame(self,*_):pass
+            def text(self,*_,**__):pass
+            def present(self):pass
+            def event_timeout(self,*_):return "timeout"
+        class FakeMusic:
+            def __init__(self):self.paused=False
+            def pause(self):self.paused=True
+            def resume(self):self.paused=False
+        script=(
+            "print('Go to https://example.test/device',flush=True);"
+            "print('Enter code: GUI1-TEST',flush=True)"
+        )
+        provider=Provider(
+            id="fake",label="Fake",command=["fake"],auth="oauth-device",
+            oauth_profiles=[OAuthProfile("FAKE ACCOUNT",[sys.executable,"-c",script])],
+        )
+        cockpit=object.__new__(PixelCockpit)
+        cockpit.ui=FakeUI();cockpit.music=FakeMusic();cockpit.status=""
+        messages=[]
+        cockpit.toast=lambda message,lines=():messages.append((message,list(lines)))
+        with patch.object(phone,"qr_matrix",return_value=[[False,False],[False,True]]):
+            cockpit.oauth_login(provider)
+        self.assertIn("OAUTH READY",cockpit.status)
+        self.assertEqual(messages[-1][0],"OAUTH LOGIN COMPLETE")
+        self.assertFalse(cockpit.music.paused)
 
     def test_provider_home_actions_follow_provider_capabilities(self):
         claude=Provider("claude","Claude",["claude"],skills_dir="~/.claude/skills")

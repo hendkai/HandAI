@@ -53,13 +53,13 @@ sofort. Das Cockpit-Menü *Sessions* zeigt alle laufenden (lokal + jede Remote-B
 
 ## Auth-Modelle
 - `oauth-device`: der Provider hat einen eigenen `login`-Flow, der
-  Device-Code + URL zeigt. Du öffnest die URL am Handy. HandAI sieht **nie** ein Token.
-  Ideal für ein tastaturloses Gerät.
-- `token-env`: HandAI hält einen API-Key im Secret-Store
-  und injiziert es als Env-Var. Eingabe per On-Screen-Keyboard. Siehe `PROVIDERS.md`
-  zur Remote-Bereitstellung (Token darf nicht in der Prozessliste des Remote-Hosts
-  landen). Ein Provider kann beide Methoden anbieten; OAuth ist dann der
-  interaktive Standard und der API-Key bleibt als Alternative verfügbar.
+  Device-Code + URL ausgibt. `handai.oauth` führt die CLI ohne sichtbare Konsole
+  aus; die Pixel-GUI rendert URL, QR, Code und Live-Status. HandAI sieht **nie**
+  das resultierende Token. Callback-feindliche Flows können einen vom Browser
+  gelieferten Code über die Bildschirmtastatur an die CLI zurückgeben.
+- `token-env` bleibt für benutzerdefinierte Provider und verwaltete Gateways
+  technisch verfügbar. Die ausgelieferte Standardkonfiguration bietet für
+  Claude, Codex, Hermes, OpenCode und OpenClaw jedoch ausschließlich OAuth an.
 
 ## Warum stdlib-only Python
 Der Core nutzt ausschließlich die Python-Standardbibliothek (json, curses, subprocess,
