@@ -29,7 +29,7 @@ from handai.router import _cd_expr, build_target, session_name
 from handai.secrets import SecretStore
 from handai import tmux
 from handai import phone, tailscale
-from handai.pixelgui import PixelCockpit, THEMES, load_theme, save_theme, provider_actions, provider_brand, _FONT
+from handai.pixelgui import DEEPLAY_CONTROLLER_MAPPING, PixelCockpit, THEMES, load_theme, save_theme, provider_actions, provider_brand, _FONT
 
 
 def _claude():
@@ -436,6 +436,15 @@ class TestManagedDevices(unittest.TestCase):
 
 
 class TestPreferences(unittest.TestCase):
+    def test_rg35xxsp_default_controller_mapping(self):
+        self.assertIn("Deeplay-keys", DEEPLAY_CONTROLLER_MAPPING)
+        self.assertIn("a:b3", DEEPLAY_CONTROLLER_MAPPING)
+        self.assertIn("dpup:h0.1", DEEPLAY_CONTROLLER_MAPPING)
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(preferences.button_map(Path(d)/"missing.json"),
+                             {0:"a", 1:"b", 2:"cancel", 4:"cancel", 6:"done",
+                              11:"up", 12:"down", 13:"left", 14:"right"})
+
     def test_first_run_and_button_map_persist(self):
         with tempfile.TemporaryDirectory() as d:
             path=Path(d)/"prefs.json"

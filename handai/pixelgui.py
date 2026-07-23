@@ -14,6 +14,7 @@ import os
 import shlex
 import shutil
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Sequence, TypeVar
@@ -25,6 +26,20 @@ from .router import build_target
 from .secrets import SecretStore
 
 T = TypeVar("T")
+
+# The H700 kernel exposes the built-in RG35XXSP controls as a generic
+# "Deeplay-keys" joystick.  SDL does not classify it as a GameController
+# without a mapping, so controller button events would otherwise never reach
+# the cockpit.  The physical button/axis ids match the es_input.cfg shipped in
+# the pinned KNULLI Gladiator II firmware used by our image builder.
+DEEPLAY_CONTROLLER_MAPPING = (
+    "19000000010000000100000000010000,Deeplay-keys,"
+    "a:b3,b:b4,x:b6,y:b5,back:b9,start:b10,guide:b11,"
+    "leftshoulder:b7,rightshoulder:b8,lefttrigger:b13,righttrigger:b14,"
+    "leftstick:b12,rightstick:b15,"
+    "dpup:h0.1,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,"
+    "leftx:a0,lefty:a1,rightx:a2,righty:a3,platform:Linux,"
+)
 
 
 @dataclass(frozen=True)
@@ -193,6 +208,8 @@ class SDL:
         s.SDL_WaitEvent.argtypes=[ctypes.c_void_p]; s.SDL_WaitEvent.restype=ctypes.c_int
         s.SDL_WaitEventTimeout.argtypes=[ctypes.c_void_p,ctypes.c_int]; s.SDL_WaitEventTimeout.restype=ctypes.c_int
         s.SDL_NumJoysticks.restype=ctypes.c_int; s.SDL_IsGameController.argtypes=[ctypes.c_int]
+        s.SDL_JoystickNameForIndex.argtypes=[ctypes.c_int]; s.SDL_JoystickNameForIndex.restype=ctypes.c_char_p
+        s.SDL_GameControllerAddMapping.argtypes=[ctypes.c_char_p]; s.SDL_GameControllerAddMapping.restype=ctypes.c_int
         s.SDL_GameControllerOpen.argtypes=[ctypes.c_int]; s.SDL_GameControllerOpen.restype=ctypes.c_void_p
         s.SDL_GameControllerClose.argtypes=[ctypes.c_void_p]
         s.SDL_DestroyRenderer.argtypes=[ctypes.c_void_p]; s.SDL_DestroyWindow.argtypes=[ctypes.c_void_p]
@@ -201,14 +218,26 @@ class SDL:
 
     def open(self):
         if self.s.SDL_Init(0x20|0x2000)!=0: raise RuntimeError(self.s.SDL_GetError().decode())
+        mapping_result=self.s.SDL_GameControllerAddMapping(DEEPLAY_CONTROLLER_MAPPING.encode())
+        if mapping_result<0:
+            print(f"input: Deeplay mapping failed: {self.s.SDL_GetError().decode()}",file=sys.stderr)
         fullscreen=0x1001 if os.environ.get("HANDAI_FULLSCREEN", "1" if os.path.exists("/dev/dri") else "0")!="0" else 0x4
         self.window=self.s.SDL_CreateWindow(b"HandAI Pixel Cockpit",0x2FFF0000,0x2FFF0000,self.W,self.H,fullscreen)
         if not self.window: raise RuntimeError(self.s.SDL_GetError().decode())
         self.renderer=self.s.SDL_CreateRenderer(self.window,-1,0x2|0x4) or self.s.SDL_CreateRenderer(self.window,-1,0)
         if not self.renderer: raise RuntimeError(self.s.SDL_GetError().decode())
         self.s.SDL_RenderSetLogicalSize(self.renderer,self.W,self.H)
-        for i in range(self.s.SDL_NumJoysticks()):
-            if self.s.SDL_IsGameController(i): self.pad=self.s.SDL_GameControllerOpen(i); break
+        joystick_count=self.s.SDL_NumJoysticks()
+        print(f"input: SDL joysticks={joystick_count} deeplay_mapping={mapping_result}",file=sys.stderr)
+        for i in range(joystick_count):
+            raw_name=self.s.SDL_JoystickNameForIndex(i)
+            name=raw_name.decode(errors="replace") if raw_name else "unknown"
+            is_controller=bool(self.s.SDL_IsGameController(i))
+            print(f"input: joystick[{i}] name={name!r} controller={is_controller}",file=sys.stderr)
+            if is_controller and not self.pad:
+                self.pad=self.s.SDL_GameControllerOpen(i)
+        if not self.pad:
+            print("input: no SDL GameController opened",file=sys.stderr)
 
     def close(self):
         if self.pad: self.s.SDL_GameControllerClose(self.pad); self.pad=None

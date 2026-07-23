@@ -41,7 +41,7 @@ def mark_completed(target: Path | None = None) -> None:
     save(data, target)
 
 
-DEFAULT_BUTTONS = {0:"a", 1:"b", 2:"cancel", 6:"b", 7:"done",
+DEFAULT_BUTTONS = {0:"a", 1:"b", 2:"cancel", 4:"cancel", 6:"done",
                    11:"up", 12:"down", 13:"left", 14:"right"}
 
 
