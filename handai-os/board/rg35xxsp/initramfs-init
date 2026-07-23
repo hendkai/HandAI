@@ -99,6 +99,10 @@ do_root() {
     test -x /new_root/sbin/init || fail_boot "INIT NOT EXECUTABLE"
     persist_status /boot_root "OK INIT EXECUTABLE"
 
+    mkdir -p /new_root/boot /new_root/overlay /new_root/sys \
+        /new_root/proc /new_root/dev || fail_boot "CREATE MOVE TARGETS"
+    persist_status /boot_root "OK MOVE TARGETS READY"
+
     mount --move /boot_root /new_root/boot || fail_boot "MOVE BOOT"
     mount --move /overlay_root /new_root/overlay || return 1
     mount --move /sys /new_root/sys || return 1
