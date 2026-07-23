@@ -68,10 +68,10 @@ class Config:
         return next((m for m in self.modes if m.id == mid), None)
 
     def modes_for(self, provider: Provider) -> list[Mode]:
-        static_ssh = any(m.transport == "ssh" and not m.id.startswith("managed-")
-                         and provider.allows_mode(m.id) for m in self.modes)
+        managed_ssh = (not provider.allowed_modes or
+                       any(mode_id != "local" for mode_id in provider.allowed_modes))
         return [m for m in self.modes if provider.allows_mode(m.id)
-                or (m.transport == "ssh" and m.id.startswith("managed-") and static_ssh)
+                or (m.transport == "ssh" and m.id.startswith("managed-") and managed_ssh)
                 or (m.transport == "openclaw-gateway" and provider.id == "openclaw")
                 or (m.transport == "hermes-api" and provider.id == "hermes")]
 

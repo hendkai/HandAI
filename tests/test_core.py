@@ -174,7 +174,11 @@ class TestProviders(unittest.TestCase):
             "handai"/"handai.json"
         ).read_text("utf-8"))
         self.assertEqual(device["providers"],example["providers"])
-        self.assertEqual(device["modes"],example["modes"])
+        self.assertEqual(
+            device["modes"],
+            [{"id":"local","label":"Local (on-device)","transport":"local",
+              "default_workdir":"~/work"}],
+        )
 
 
 class TestPixelGuiPure(unittest.TestCase):
@@ -499,7 +503,7 @@ class TestManagedDevices(unittest.TestCase):
                           devices.RemoteDevice("hermes","Hermes","hermes-api","https://hermes.example")],registry)
             cfg=Config([Provider("openclaw","OpenClaw",["openclaw"],allowed_modes=["local","devbox"]),
                         Provider("localonly","Local",["local"],allowed_modes=["local"])],
-                       [LOCAL,DEVBOX],[])
+                       [LOCAL],[])
             cfg.reload_devices(registry)
             ids=[m.id for m in cfg.modes_for(cfg.provider("openclaw"))]
             self.assertIn("managed-desk",ids)

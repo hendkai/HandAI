@@ -1,5 +1,5 @@
 {
-  "$comment": "On-device default config. Edit remote hosts (devbox/cloud) to your boxes. Lives on the read-only rootfs; user tokens + recent live under /data (HANDAI_STATE).",
+  "$comment": "On-device defaults. Add real computers and gateways in Settings > Remote Devices; they persist under /data. Provider OAuth credentials and preferences also live under /data.",
 
   "providers": [
     { "id": "claude", "label": "Claude Code", "command": ["claude"],
@@ -60,11 +60,7 @@
 
   "modes": [
     { "id": "local",  "label": "Local (on-device)", "transport": "local",
-      "default_workdir": "~/work" },
-    { "id": "devbox", "label": "Devbox (SSH)", "transport": "ssh",
-      "host": "dev@devbox.local", "default_workdir": "~/projects" },
-    { "id": "cloud",  "label": "Cloud sandbox (SSH)", "transport": "ssh",
-      "host": "${HANDAI_CLOUD_HOST}", "default_workdir": "/workspace" }
+      "default_workdir": "~/work" }
   ],
 
   "recent_workdirs": ["~/work"]

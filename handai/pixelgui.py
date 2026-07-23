@@ -836,10 +836,13 @@ class PixelCockpit:
             remote_modes=[m for m in self.cfg.modes if m.is_remote]
             candidates=[p for p in self.cfg.providers
                         if any(m in self.cfg.modes_for(p) for m in remote_modes)]
-            p=self.pick("REMOTE PROVIDERS",candidates,
-                        lambda p:f"? {p.label} [CHOOSE TARGET]",
-                        subtitle="CHOOSE THE AGENT ON THE OTHER DEVICE")
-            if p:self.provider_hub(p)
+            choices=["ADD REMOTE TARGET",*candidates]
+            choice=self.pick("REMOTE PROVIDERS",choices,
+                             lambda p:p if isinstance(p,str) else
+                             f"? {p.label} [CHOOSE TARGET]",
+                             subtitle="RUN THE AGENT ON YOUR COMPUTER OR SERVER")
+            if choice=="ADD REMOTE TARGET":self.remote_devices()
+            elif choice:self.provider_hub(choice)
 
     def provider_label(self,p):
         return f"{p.label} [{' + '.join(p.auth_methods or [p.auth])}]"
