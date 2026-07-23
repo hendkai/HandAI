@@ -11,6 +11,12 @@ API. The capture path is:
 - Bluetooth headsets in HFP/HSP mode through BlueZ, PipeWire and WirePlumber.
   A2DP alone is playback-only; the headset must expose an HFP/HSP microphone.
 
+On the RG35XXSP, HandAI attaches the RTL8821CS Bluetooth UART on `ttyS1` before
+BlueZ starts. The matching Realtek attach helper, kernel module and firmware
+come from the same checksum-pinned KNULLI hardware template as the BSP kernel.
+The automatic hardware report treats a missing `hci0` controller as a required
+failure and exports the result to the SD card's readable boot log.
+
 Open **Voice Input -> Input Source** after connecting a headset. A Bluetooth
 source normally appears with the headset name. Pairing and reconnecting are
 available under **Voice Input -> Bluetooth Headsets**.

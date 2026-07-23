@@ -98,6 +98,7 @@ for path in \
 	lib/firmware/rtlbt/rtl8821c_fw \
 	etc/ssl/certs/ca-certificates.crt \
 	lib/modules/4.9.170 \
+	lib/modules/4.9.170/kernel/drivers/bluetooth/rtl_btlpm.ko \
 	lib/modules/mali_kbase.ko \
 	usr/lib/libmali.so.0 \
 	usr/lib/libEGL.so.1 \
