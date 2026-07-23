@@ -56,7 +56,7 @@ if ! command -v hermes >/dev/null 2>&1; then
 		command -v xz >/dev/null 2>&1 &&
 		curl --fail --silent --show-error --location \
 			https://hermes-agent.nousresearch.com/install.sh -o "$hermes_installer"; then
-		bash "$hermes_installer" --skip-setup --skip-browser \
+		bash "$hermes_installer" --skip-setup --skip-browser --non-interactive \
 			--dir "$HERMES_HOME/hermes-agent" \
 			--hermes-home "$HERMES_HOME" || {
 			echo "Warning: Hermes install failed; remote use remains available." >&2

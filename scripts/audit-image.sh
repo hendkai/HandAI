@@ -178,6 +178,11 @@ grep -q 'npm_config_prefix=/data/handai/npm' \
 	echo "persistent local-agent install path is missing" >&2
 	exit 1
 }
+grep -q -- '--skip-setup --skip-browser --non-interactive' \
+	"$TMP/rootfs/usr/sbin/handai-install-agents" || {
+	echo "Hermes local install is not configured for unattended handheld use" >&2
+	exit 1
+}
 "$READELF" -n "$TMP/rootfs/bin/busybox" | grep -q 'OS: Linux, ABI: 4\.9\.0' || {
 	echo "userland ABI does not match the RG35XXSP Linux 4.9 kernel" >&2
 	exit 1
