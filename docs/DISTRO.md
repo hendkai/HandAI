@@ -6,17 +6,20 @@ nur mit den Handheld-Tasten.
 
 ## Ehrliche Einordnung: was „eigene Distro" hier realistisch heißt
 
-Der Allwinner **H700** hat *keinen* vollständigen Mainline-Support (v.a. Display/GPU/
-Bootchain). Eine Distro from-absolute-scratch würde am Board-Bringup scheitern, nicht
-am Userland. Der gangbare Weg:
+Der Allwinner **H700** hat weiterhin keinen vollständigen Mainline-Support für
+Display/GPU. U-Boot unterstützt die RG35XX-H700-Familie inzwischen upstream.
+Deshalb gibt es zwei getrennte, überprüfbare Wege:
 
 - **Eigenes Userland + eigener Init-Flow + eigenes Cockpit** → das ist unsere Distro.
-- **Kernel + DTB + U-Boot** werden als Vendor-Blobs aus einer bestehenden H700-CFW
-  (Knulli/muOS/ROCKNIX für den RG35xxSP) übernommen. Diese sind GPL-Kernel + Vendor-
-  Patches; wir bauen *unser* Rootfs darum herum.
+- **Stabiles Image:** bewährter BSP-Kernel und Boot-Unterbau, aber eigenes
+  HandAI-Rootfs, Mali-SDL-Runtime, Bootlogo, Init und Diagnosebild.
+- **Offenes Bootloader-Testimage:** eigener HandAI-Build aus mainline
+  SPL/U-Boot + Trusted Firmware-A + HandAI-Bootskript. Nur der Display-Kernel
+  bleibt zunächst der BSP-Kernel.
 
-Das ist eine eigenständige Distro (eigenes Rootfs, eigenes Init, eigene UX), aber mit
-geliehener Bootchain. Alles andere wäre auf dieser SoC-Klasse Selbstbetrug.
+Das offene Bootloader-Image bleibt bis zum erfolgreichen Kaltstart auf echter
+Hardware separat; so ist der Port ehrlich testbar, ohne das stabile Image zu
+gefährden.
 
 ## Build-System: Buildroot (external tree)
 
@@ -107,6 +110,11 @@ ersetzt auf der FAT-Boot-Resource-Partition ausschließlich `boot/batocera` durc
 ein SquashFS des Buildroot-Targets. Passende Kernelmodule/Firmware werden vorher
 aus dem verifizierten Original-SquashFS übernommen. Partition 4 wird als frisches
 ext4 mit Label `handai-data` formatiert.
+
+Für das optionale offene Testimage kopiert `build-open-bootloader.sh` zuerst
+dieses geprüfte Image, ersetzt dann ausschließlich den eGON-SPL/U-Boot-Bereich
+ab 256 KiB und ergänzt `boot.scr`. Die primäre GPT-Tabelle bleibt dabei intakt;
+das stabile Quellimage wird nie verändert.
 
 ## Gamepad → Tasten
 

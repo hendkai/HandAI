@@ -45,7 +45,7 @@ fi
 # template, not its additional 2 GiB download/cache files.
 mkdir -p "$SRC"
 rsync -a --delete \
-	--exclude '.git' --exclude '__pycache__' --exclude 'output' \
+	--exclude '.git' --exclude '__pycache__' --exclude 'dist' --exclude 'output' \
 	--exclude 'handai-build' --exclude 'handai-os/board/rg35xxsp/blobs' \
 	"$REPO"/ "$SRC"/
 mkdir -p "$SRC/handai-os/board/rg35xxsp/blobs"

@@ -1,8 +1,10 @@
 # handai-os — Buildroot external tree for HandAI OS
 
 Builds a minimal Linux that boots the RG35xxSP straight into the HandAI cockpit.
-The userland is built by HandAI. The H700 bootchain/layout is copied from a
-SHA-256-pinned official KNULLI RG35xxSP image because upstream H700 support is incomplete.
+The stable image uses a SHA-256-pinned H700 kernel/layout while replacing the
+userland, graphics runtime, boot artwork and persistent data with HandAI OS.
+An independently built open SPL/U-Boot image is available as a separate hardware
+test target under `board/rg35xxsp/upstream-uboot/`.
 
 ## Build (on a Linux build host, not the handheld)
 
@@ -51,6 +53,15 @@ vendor kernel modules, then validates the
 After the first real boot, run `handai-hardware-report` over SSH or select
 **Settings → Hardware Acceptance Report**. The JSON result is persisted under
 `/data/handai/` and turns the remaining board check into one reproducible run.
+
+## Open HandAI bootloader (experimental)
+
+`scripts/build-open-bootloader.sh` builds the upstream
+`anbernic_rg35xx_h700_defconfig` as a HandAI-branded eGON SPL/U-Boot, together
+with Trusted Firmware-A for `sun50i_h616`. When passed an audited stable image,
+it copies that image, installs the open bootloader at the RG35XXSP's proven
+256 KiB offset, adds `boot.scr`, and emits an explicitly named experimental
+image. It never modifies the stable source image.
 
 ## Variants
 - **Remote** (recommended build-script default): no Node/local agent CLIs; the

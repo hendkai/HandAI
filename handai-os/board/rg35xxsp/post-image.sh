@@ -33,10 +33,18 @@ WORK="$(mktemp -d)"
 cleanup(){ rm -rf "$WORK"; }
 trap cleanup EXIT
 
-echo "Extracting matching kernel modules/firmware from the verified template..."
+echo "Extracting matching H700 graphics stack and kernel support..."
 mkdir -p "$WORK/vendor-root"
 "$MCOPY" -i "$TEMPLATE@@$BOOT_RESOURCE_OFFSET" ::boot/batocera "$WORK/vendor.squashfs"
-"$UNSQUASHFS" -f -d "$WORK/vendor-root" "$WORK/vendor.squashfs" lib/modules lib/firmware >/dev/null
+"$MCOPY" -i "$TEMPLATE@@$BOOT_RESOURCE_OFFSET" ::bootlogo.bmp "$WORK/vendor-bootlogo.bmp"
+"$UNSQUASHFS" -f -d "$WORK/vendor-root" "$WORK/vendor.squashfs" \
+	lib/modules \
+	lib/firmware \
+	'usr/lib/libSDL2-2.0.so.0*' \
+	'usr/lib/libmali.so*' \
+	'usr/lib/libEGL.so*' \
+	'usr/lib/libGLESv1_CM.so*' \
+	'usr/lib/libGLESv2.so*' >/dev/null
 mkdir -p "$WORK/rootfs"
 cp -a "$TARGET_DIR/." "$WORK/rootfs/"
 if [ -d "$WORK/vendor-root/lib/modules" ]; then
@@ -48,6 +56,22 @@ if [ -d "$WORK/vendor-root/lib/firmware" ]; then
 	mkdir -p "$WORK/rootfs/lib"
 	cp -a "$WORK/vendor-root/lib/firmware" "$WORK/rootfs/lib/firmware"
 fi
+mkdir -p "$WORK/rootfs/usr/lib"
+for pattern in \
+	'libSDL2-2.0.so.0*' \
+	'libmali.so*' \
+	'libEGL.so*' \
+	'libGLESv1_CM.so*' \
+	'libGLESv2.so*'; do
+	for library in "$WORK/vendor-root/usr/lib"/$pattern; do
+		[ -e "$library" ] || [ -L "$library" ] || continue
+		cp -a "$library" "$WORK/rootfs/usr/lib/"
+	done
+done
+
+echo "Generating HandAI boot artwork..."
+python3 "$BOARD_DIR/generate-bootlogo.py" \
+	"$WORK/vendor-bootlogo.bmp" "$WORK/handai-bootlogo.bmp"
 
 echo "Building HandAI SquashFS..."
 "$MKSQUASHFS" "$WORK/rootfs" "$WORK/handai.squashfs" -noappend -comp gzip -all-root >/dev/null
@@ -57,6 +81,8 @@ cp --reflink=auto "$TEMPLATE" "$SDCARD"
 chmod u+w "$SDCARD"
 "$MDEL" -i "$SDCARD@@$BOOT_RESOURCE_OFFSET" ::boot/batocera
 "$MCOPY" -o -i "$SDCARD@@$BOOT_RESOURCE_OFFSET" "$WORK/handai.squashfs" ::boot/batocera
+"$MDEL" -i "$SDCARD@@$BOOT_RESOURCE_OFFSET" ::bootlogo.bmp
+"$MCOPY" -o -i "$SDCARD@@$BOOT_RESOURCE_OFFSET" "$WORK/handai-bootlogo.bmp" ::bootlogo.bmp
 
 echo "Creating persistent HandAI data partition..."
 truncate -s "$DATA_SIZE" "$WORK/data.ext4"

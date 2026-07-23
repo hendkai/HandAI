@@ -136,6 +136,10 @@ python -m handai --ui pixel
   dessen erprobtes GPT-/Kernel-/Initramfs-Layout ausschließlich als lokale Vorlage.
   Der Imagebau ersetzt darin das Root-System durch HandAI und formatiert die
   persistente Datenpartition neu; das große Firmware-Template wird nie committed.
+- ✅ **Eigener offener Bootloader als Testziel**: HandAI baut ein eigenes,
+  gebrandetes mainline SPL/U-Boot 2025.10 samt Trusted Firmware-A und Bootskript.
+  Das Ergebnis liegt bewusst in einem separaten `upstream-uboot-experimental`
+  Image, bis der Kaltstart auf echter RG35XXSP-Hardware bestätigt ist.
 - ✅ **SDL2/DRM-Pixel-Art-Frontend**: natives 640×480-Dashboard, Bitmap-Schrift,
   Gamepad-Navigation, Bildschirmtastatur und zehn dauerhaft wählbare Farb-Skins;
   curses bleibt als serieller/QEMU-Fallback.

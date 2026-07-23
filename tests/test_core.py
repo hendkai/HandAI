@@ -22,7 +22,7 @@ import zipfile
 
 from handai.config import Config
 from handai.network import Network, detect_iface, parse_saved_networks, parse_scan_results
-from handai import audio, devices, diagnostics, hardware_report, music, oauth, power, preferences, skill_catalog, skills
+from handai import audio, bootdiag, devices, diagnostics, hardware_report, music, oauth, power, preferences, skill_catalog, skills
 from handai.providers import Mode, OAuthProfile, Provider, parse_modes, parse_providers
 from handai.remote import _export_line
 from handai.router import _cd_expr, build_target, session_name
@@ -42,6 +42,16 @@ def _hermes():
     return Provider(id="hermes", label="Hermes", command=["hermes", "agent"],
                     auth="token-env", token_env="HERMES_API_KEY",
                     allowed_modes=["devbox"])
+
+
+class TestFramebufferBootDiagnostic(unittest.TestCase):
+    def test_rgb565_and_bgra_pixels(self):
+        self.assertEqual(bootdiag._pixel((255, 0, 0), 16), struct.pack("<H", 0xF800))
+        self.assertEqual(bootdiag._pixel((1, 2, 3), 32), b"\x03\x02\x01\xff")
+
+    def test_unsupported_depth_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "unsupported framebuffer depth"):
+            bootdiag._pixel((0, 0, 0), 24)
 
 
 LOCAL = Mode(id="local", label="Local", transport="local", default_workdir="~/work")

@@ -8,7 +8,7 @@ HANDAI_TTY="${HANDAI_TTY:-/dev/tty1}"
 HANDAI_UI="${HANDAI_UI:-pixel}"
 HANDAI_FULLSCREEN="${HANDAI_FULLSCREEN:-1}"
 
-DAEMON_ENV="HOME=/data/handai/home XDG_CONFIG_HOME=/data/handai/home/.config XDG_RUNTIME_DIR=/run/handai-audio PIPEWIRE_RUNTIME_DIR=/run/handai-audio HANDAI_CONFIG=/etc/handai/handai.json HANDAI_STATE=/data/handai PYTHONPATH=/opt/handai HANDAI_TMUX_CONF=/etc/handai/tmux.conf HANDAI_UI=$HANDAI_UI HANDAI_FULLSCREEN=$HANDAI_FULLSCREEN TERM=linux"
+DAEMON_ENV="HOME=/data/handai/home XDG_CONFIG_HOME=/data/handai/home/.config XDG_RUNTIME_DIR=/run/handai-audio PIPEWIRE_RUNTIME_DIR=/run/handai-audio HANDAI_CONFIG=/etc/handai/handai.json HANDAI_STATE=/data/handai PYTHONPATH=/opt/handai HANDAI_TMUX_CONF=/etc/handai/tmux.conf HANDAI_UI=$HANDAI_UI HANDAI_FULLSCREEN=$HANDAI_FULLSCREEN SDL_VIDEODRIVER=mali TERM=linux"
 
 start() {
 	# mount the persistent /data partition if one exists (device only). Node name
@@ -23,6 +23,11 @@ start() {
 		done
 	fi
 	mkdir -p /data/handai /data/handai/home/.config
+	# The H700 BSP exposes its display through the proprietary Mali fbdev path.
+	# Load that module before SDL so a failure is diagnosable instead of black.
+	if [ -f /lib/modules/mali_kbase.ko ] && [ ! -e /dev/mali0 ]; then
+		insmod /lib/modules/mali_kbase.ko >>/data/handai/cockpit.log 2>&1 || true
+	fi
 	# Tailscale keeps node identity on the persistent data partition. Buildroot's
 	# package has no BusyBox/SysV service, so start the daemon here after /data is
 	# mounted. Login itself is initiated from the cockpit and completed by phone.
@@ -39,9 +44,15 @@ start() {
 
 	# run the cockpit on tty1, respawn forever
 	(
+		env $DAEMON_ENV /usr/bin/python3 -m handai.bootdiag \
+			"STARTING HANDAI" >>/data/handai/cockpit.log 2>&1 || true
 		while true; do
 			env $DAEMON_ENV \
-				/usr/bin/python3 -m handai <>"$HANDAI_TTY" >"$HANDAI_TTY" 2>&1
+				/usr/bin/python3 -m handai <"$HANDAI_TTY" \
+				>>/data/handai/cockpit.log 2>&1
+			status=$?
+			env $DAEMON_ENV /usr/bin/python3 -m handai.bootdiag \
+				"GUI FAILED - CODE $status" >>/data/handai/cockpit.log 2>&1 || true
 			sleep 1
 		done
 	) &

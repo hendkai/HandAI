@@ -38,6 +38,7 @@ require_file() {
 }
 for path in \
 	opt/handai/handai/pixelgui.py \
+	opt/handai/handai/bootdiag.py \
 	opt/handai/handai/audio.py \
 	opt/handai/handai/oauth.py \
 	opt/handai/handai/music.py \
@@ -67,9 +68,25 @@ for path in \
 	usr/bin/bluetoothctl \
 	usr/bin/whisper-cli \
 	etc/ssl/certs/ca-certificates.crt \
-	lib/modules/4.9.170; do
+	lib/modules/4.9.170 \
+	lib/modules/mali_kbase.ko \
+	usr/lib/libmali.so.0 \
+	usr/lib/libEGL.so.1 \
+	usr/lib/libGLESv2.so.2; do
 	require_file "$path"
 done
+grep -a -q 'Mali EGL Video Driver' "$TMP/rootfs/usr/lib/libSDL2-2.0.so.0" || {
+	echo "SDL2 does not contain the H700 Mali fbdev backend" >&2
+	exit 1
+}
+
+echo ">> checking HandAI boot artwork"
+"$MCOPY" -o -i "$IMAGE@@$BOOT_RESOURCE_OFFSET" ::bootlogo.bmp "$TMP/bootlogo.bmp"
+BOOTLOGO_SIZE="$(stat -c '%s' "$TMP/bootlogo.bmp")"
+[ "$BOOTLOGO_SIZE" -gt 1200000 ] || {
+	echo "HandAI boot logo is missing or truncated" >&2
+	exit 1
+}
 
 echo ">> checking data filesystem label"
 DATA_INFO="$(blkid -p -O "$DATA_OFFSET" "$IMAGE")"
