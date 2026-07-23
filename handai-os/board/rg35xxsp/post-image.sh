@@ -115,6 +115,12 @@ dd if="$TEMPLATE" of="$WORK/android-boot/boot.img" bs=512 \
 
 echo "Building HandAI SquashFS..."
 "$MKSQUASHFS" "$WORK/rootfs" "$WORK/handai.squashfs" -noappend -comp gzip -all-root >/dev/null
+ROOTFS_SHA256="$(sha256sum "$WORK/handai.squashfs" | awk '{print $1}')"
+printf 'ROOTFS | SHA256 | %s\n' "$ROOTFS_SHA256" >>"$WORK/handai-debug.log"
+cat >"$WORK/handai-image.txt" <<EOF
+HandAI OS RG35XXSP
+RootFS-SHA256: $ROOTFS_SHA256
+EOF
 
 SDCARD="$BINARIES_DIR/sdcard.img"
 cp --reflink=auto "$TEMPLATE" "$SDCARD"
@@ -126,6 +132,7 @@ dd if="$WORK/android-boot/boot-debug.img" of="$SDCARD" bs=4M \
 "$MDEL" -i "$SDCARD@@$BOOT_RESOURCE_OFFSET" ::bootlogo.bmp
 "$MCOPY" -o -i "$SDCARD@@$BOOT_RESOURCE_OFFSET" "$WORK/handai-bootlogo.bmp" ::bootlogo.bmp
 "$MCOPY" -o -i "$SDCARD@@$BOOT_RESOURCE_OFFSET" "$WORK/handai-debug.log" ::handai-debug.log
+"$MCOPY" -o -i "$SDCARD@@$BOOT_RESOURCE_OFFSET" "$WORK/handai-image.txt" ::handai-image.txt
 
 echo "Creating persistent HandAI data partition..."
 truncate -s "$DATA_SIZE" "$WORK/data.ext4"

@@ -142,6 +142,7 @@ grep -a -q 'Mali EGL Video Driver' "$TMP/rootfs/usr/lib/libSDL2-2.0.so.0" || {
 echo ">> checking HandAI boot artwork"
 "$MCOPY" -o -i "$IMAGE@@$BOOT_RESOURCE_OFFSET" ::bootlogo.bmp "$TMP/bootlogo.bmp"
 "$MCOPY" -o -i "$IMAGE@@$BOOT_RESOURCE_OFFSET" ::handai-debug.log "$TMP/handai-debug.log"
+"$MCOPY" -o -i "$IMAGE@@$BOOT_RESOURCE_OFFSET" ::handai-image.txt "$TMP/handai-image.txt"
 BOOTLOGO_SIZE="$(stat -c '%s' "$TMP/bootlogo.bmp")"
 [ "$BOOTLOGO_SIZE" -gt 1200000 ] || {
 	echo "HandAI boot logo is missing or truncated" >&2
@@ -149,6 +150,15 @@ BOOTLOGO_SIZE="$(stat -c '%s' "$TMP/bootlogo.bmp")"
 }
 grep -q 'If no line starts with RUNTIME' "$TMP/handai-debug.log" || {
 	echo "SD-readable boot debug marker is missing" >&2
+	exit 1
+}
+ROOTFS_SHA256="$(sha256sum "$TMP/handai.squashfs" | cut -d' ' -f1)"
+grep -qF "ROOTFS | SHA256 | $ROOTFS_SHA256" "$TMP/handai-debug.log" || {
+	echo "SD-readable rootfs identity is missing or incorrect" >&2
+	exit 1
+}
+grep -qF "RootFS-SHA256: $ROOTFS_SHA256" "$TMP/handai-image.txt" || {
+	echo "SD-readable image identity file is missing or incorrect" >&2
 	exit 1
 }
 
