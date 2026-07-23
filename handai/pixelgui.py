@@ -14,6 +14,7 @@ import os
 import select
 import shlex
 import shutil
+import string
 import struct
 import subprocess
 import sys
@@ -30,6 +31,7 @@ from .router import build_target
 from .secrets import SecretStore
 
 T = TypeVar("T")
+OSK_CHARS = string.ascii_uppercase + string.ascii_lowercase + string.digits + " " + string.punctuation
 
 # The H700 kernel exposes the built-in RG35XXSP controls as a generic
 # "Deeplay-keys" joystick.  SDL does not classify it as a GameController
@@ -281,6 +283,11 @@ _FONT = {
  "(":("00010","00100","01000","01000","01000","00100","00010"),")":("01000","00100","00010","00010","00010","00100","01000"),
  "=":("00000","11111","00000","11111","00000","00000","00000"),"@":("01110","10001","10111","10101","10111","10000","01110"),
  "#":("01010","11111","01010","01010","11111","01010","00000"),"'":("00100","00100","00000","00000","00000","00000","00000"),
+ '"':("01010","01010","00000","00000","00000","00000","00000"),"$":("00100","01111","10100","01110","00101","11110","00100"),
+ "&":("01100","10010","10100","01000","10101","10010","01101"),";":("00000","00110","00110","00000","00110","00110","00100"),
+ "^":("00100","01010","10001","00000","00000","00000","00000"),"`":("01000","00100","00000","00000","00000","00000","00000"),
+ "{":("00010","00100","00100","01000","00100","00100","00010"),"|":("00100","00100","00100","00100","00100","00100","00100"),
+ "}":("01000","00100","00100","00010","00100","00100","01000"),"~":("00000","00000","01001","10110","00000","00000","00000"),
  "%":("11001","11010","00100","00100","01000","10110","00110"),
  "<":("00010","00100","01000","10000","01000","00100","00010"),">":("01000","00100","00010","00001","00010","00100","01000"),
 }
@@ -546,16 +553,19 @@ class PixelCockpit:
         return out or [""]
 
     def prompt(self,title:str,initial="",secret=False)->str|None:
-        chars=list("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 /.,_-:@#+~?=&%")
-        cols=12; value=initial; pos=0
+        chars=list(OSK_CHARS)
+        cols=16; value=initial; pos=0
         while True:
             self.chrome(title,"ON-SCREEN KEYBOARD")
             shown="*"*len(value) if secret else value
             self.ui.rect(20,86,600,42,self.ui.PANEL2); self.ui.text(34,100,shown[-47:],self.ui.YELLOW,2,max_chars=47)
             for i,ch in enumerate(chars):
-                x=20+(i%cols)*50; y=145+(i//cols)*38
-                self.ui.rect(x,y,44,31,self.ui.CYAN if i==pos else self.ui.PANEL)
-                self.ui.text(x+16,y+9,ch,self.ui.BG if i==pos else self.ui.INK,2)
+                x=20+(i%cols)*38; y=145+(i//cols)*41
+                self.ui.rect(x,y,32,34,self.ui.CYAN if i==pos else self.ui.PANEL)
+                label="SP" if ch==" " else ch
+                scale=1 if ch==" " else 2
+                self.ui.text(x+(9 if ch==" " else 10),y+10,label,
+                             self.ui.BG if i==pos else self.ui.INK,scale)
             self.footer("D-PAD MOVE  A TYPE  B DELETE  START/ENTER DONE  ESC CANCEL"); self.ui.present(); e=self.ui.event()
             if e=="left": pos=(pos-1)%len(chars)
             elif e=="right": pos=(pos+1)%len(chars)

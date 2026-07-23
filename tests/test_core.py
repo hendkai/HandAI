@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+import string
 import struct
 import subprocess
 import sys
@@ -32,7 +33,7 @@ from handai.router import _cd_expr, build_target, session_name
 from handai.secrets import SecretStore
 from handai import tmux
 from handai import phone, tailscale
-from handai.pixelgui import DEEPLAY_CONTROLLER_MAPPING, EvdevInput, PixelCockpit, THEMES, load_theme, save_theme, provider_actions, provider_brand, openclaw_gateway_health_argv, publish_gui_ready, _FONT
+from handai.pixelgui import DEEPLAY_CONTROLLER_MAPPING, EvdevInput, OSK_CHARS, PixelCockpit, THEMES, load_theme, save_theme, provider_actions, provider_brand, openclaw_gateway_health_argv, publish_gui_ready, _FONT
 
 
 def _claude():
@@ -191,6 +192,10 @@ class TestPixelGuiPure(unittest.TestCase):
         for char in "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 /._-:@#+[]()!?":
             self.assertIn(char, _FONT)
         self.assertTrue(all(len(glyph) == 7 for glyph in _FONT.values()))
+
+    def test_osk_can_enter_all_printable_ascii_credentials(self):
+        self.assertEqual(set(OSK_CHARS),set(string.ascii_letters+string.digits+" "+string.punctuation))
+        self.assertTrue(all(char.upper() in _FONT for char in OSK_CHARS))
 
     def test_ten_unique_themes(self):
         self.assertEqual(len(THEMES), 10)
