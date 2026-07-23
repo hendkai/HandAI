@@ -47,6 +47,10 @@ SquashFS, verifies HandAI plus its launcher, HTTPS certificates, SSH, tmux,
 Tailscale, QR tooling and matching vendor kernel modules, then validates the
 `handai-data` ext4 partition and prints the image SHA-256.
 
+After the first real boot, run `handai-hardware-report` over SSH or select
+**Settings → Hardware Acceptance Report**. The JSON result is persisted under
+`/data/handai/` and turns the remaining board check into one reproducible run.
+
 ## Variants
 - **Remote** (recommended build-script default): no Node/local agent CLIs; the
   handheld is a remote cockpit with SSH and gateway clients.

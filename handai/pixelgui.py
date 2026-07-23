@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Sequence, TypeVar
 
-from . import devices, diagnostics, network, phone, preferences, remote, skill_catalog, skills, tailscale, tmux
+from . import devices, diagnostics, hardware_report, network, phone, power, preferences, remote, skill_catalog, skills, tailscale, tmux
 from .config import Config, config_path
 from .providers import Mode, Provider
 from .router import build_target
@@ -509,16 +509,38 @@ class PixelCockpit:
             return
 
     def settings(self):
-        act=self.pick("SETTINGS",["REMOTE DEVICES","SYSTEM DIAGNOSTICS","SECURE CREDENTIALS WITH PIN","GAMEPAD CALIBRATION","RUN SETUP WIZARD","CHOOSE PIXEL SKIN","SYSTEM STATUS"],subtitle=f"ACTIVE SKIN: {self.ui.theme.label}")
+        act=self.pick("SETTINGS",["REMOTE DEVICES","SYSTEM DIAGNOSTICS","HARDWARE ACCEPTANCE REPORT","SYSTEM POWER","SECURE CREDENTIALS WITH PIN","GAMEPAD CALIBRATION","RUN SETUP WIZARD","CHOOSE PIXEL SKIN","SYSTEM STATUS"],subtitle=f"ACTIVE SKIN: {self.ui.theme.label}")
         if act=="REMOTE DEVICES": self.remote_devices()
         elif act=="SYSTEM DIAGNOSTICS":
             ok,lines=diagnostics.summary();self.toast("ALL CHECKS PASSED" if ok else "HARDWARE CHECKS NEED ATTENTION",lines)
+        elif act=="HARDWARE ACCEPTANCE REPORT":
+            self.draw_busy("PROBING DEVICE HARDWARE")
+            try:
+                report=hardware_report.build_report(hardware_report.collect());target=hardware_report.save(report)
+                lines=[f"{'+' if row['ok'] else ('X' if row['required'] else '!')} {row['name']}: {row['detail']}" for row in report["checks"]]
+                lines.append(f"SAVED: {target}")
+                self.toast("HARDWARE PASSED" if report["required_ok"] else "HARDWARE NEEDS ATTENTION",lines)
+            except OSError as e:self.toast(f"REPORT FAILED: {e}")
+        elif act=="SYSTEM POWER":self.system_power()
         elif act=="SECURE CREDENTIALS WITH PIN":self.secure_credentials()
         elif act=="GAMEPAD CALIBRATION": self.gamepad_calibration()
         elif act=="RUN SETUP WIZARD": self.first_run(force=True)
         elif act=="CHOOSE PIXEL SKIN": self.choose_skin()
         elif act=="SYSTEM STATUS":
             self.toast("SYSTEM STATUS",[f"CONFIG: {config_path()}",f"STATE: {self.secrets.path}",network.status(),f"PROVIDERS: {len(self.cfg.providers)}  MODES: {len(self.cfg.modes)}",f"SKIN: {self.ui.theme.label}","GUI: SDL2 PIXEL / 640X480"])
+
+    def system_power(self):
+        caps=power.capabilities();labels=[]
+        if caps["suspend"]:labels.append("SUSPEND")
+        if caps["reboot"]:labels.append("REBOOT")
+        if caps["shutdown"]:labels.append("SHUT DOWN")
+        if not labels:self.toast("POWER CONTROL UNAVAILABLE ON THIS SYSTEM");return
+        action=self.pick("SYSTEM POWER",labels,subtitle="FILESYSTEMS ARE SYNCED BEFORE THE ACTION")
+        if not action:return
+        if self.pick(f"CONFIRM {action}",[f"YES {action}","CANCEL"],subtitle="ACTIVE AGENT SESSIONS STAY ON REMOTE HOSTS")!=f"YES {action}":return
+        key={"SUSPEND":"suspend","REBOOT":"reboot","SHUT DOWN":"shutdown"}[action]
+        self.draw_busy(f"REQUESTING {action}");ok,msg=power.execute(key)
+        if not ok:self.toast(f"POWER ACTION FAILED: {msg}")
 
     def secure_credentials(self):
         pin=self.prompt("NEW BOOT PIN","",True)

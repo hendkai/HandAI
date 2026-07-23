@@ -51,9 +51,8 @@ BR2_PACKAGE_NODEJS=y
 BR2_PACKAGE_NODEJS_NPM=y
 
 # --- rootfs image ------------------------------------------------------------
-BR2_TARGET_ROOTFS_EXT2=y
-BR2_TARGET_ROOTFS_EXT2_4=y
-BR2_TARGET_ROOTFS_EXT2_SIZE="512M"
+# post-image builds the booted SquashFS directly; no unused ext2 rootfs artifact
+# BR2_TARGET_ROOTFS_EXT2 is not set
 
 # --- our overlay (init service, /etc/handai config) + image assembly ---------
 BR2_ROOTFS_OVERLAY="$(BR2_EXTERNAL_HANDAI_PATH)/board/rg35xxsp/rootfs-overlay"

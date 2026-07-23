@@ -13,7 +13,7 @@ Ebene 3  SoC-Image               echte RG35xxSP        selten     ── nur SoC
 
 Unit-Tests (laufen überall, auch Windows):
 ```bash
-make test        # 20 Tests: Router, Provider, Secrets, tmux-Parse, Injection-Safety …
+make test        # 68 Tests: Router, Provider, Secrets, Hardware/Power, tmux, Sicherheit …
 ```
 
 Cockpit interaktiv **komplett offline** durchklicken — Fake-Provider, keine Accounts,
@@ -78,7 +78,15 @@ Was QEMU/Container **nicht** abdecken und wofür du das Gerät brauchst:
 - Framebuffer-Auflösung/-Rotation (640×480) und das reale Rendering.
 - **Gamepad→Keycode-Mapping** — ob D-Pad wirklich Pfeile, A=Enter, B=Backspace liefert.
 - WLAN-Chip-Firmware + `net/up.sh` gegen den echten SDIO-Adapter.
-- Batterie/Poweroff.
+- Akku-/Deckelsensor-Namen und Suspend-Aufwachen auf der realen Kernelrevision.
+
+Nach dem ersten Boot erzeugt **Settings → Hardware Acceptance Report** einen
+maschinenlesbaren Bericht unter `/data/handai/hardware-report-*.json`. Dasselbe
+geht per SSH mit `handai-hardware-report`. Der Test prüft Boardkennung,
+Framebuffer/DRM, Eingabegeräte, WLAN-Interface, persistente Datenpartition,
+Kernelmodule/Firmware und alle benötigten Programme. Akku und Deckelsensor sind
+Warnungen, weil sie je nach Kernelrevision anders exportiert werden. Ein
+fehlgeschlagener Pflichtcheck liefert auf der Kommandozeile Exitcode 1.
 
 Faustregel: Provider-/Modus-/Session-/UI-Änderungen → Ebene 1. Init-, Paket-, Boot-,
 Netzwerk-Änderungen → Ebene 2. Nur wenn du an Kernel/Display/Buttons/Funk rührst →
@@ -107,3 +115,4 @@ QR → Cookie → CSRF-POST-Fluss der Handy-Tastatur. Dafür werden keine Intern
 | `scripts/qemu-smoke.sh` | 2 | Boot→Cockpit headless, Marker-Assertion |
 | `run-qemu.sh` | 2 | Boot→Cockpit interaktiv, Init, Paket-Layout, ARM |
 | Flashen | 3 | SoC: Display, Gamepad, WLAN, Bootchain |
+| `handai-hardware-report` | 3 | automatischer Bericht vom echten Gerät |

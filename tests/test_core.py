@@ -18,7 +18,7 @@ import zipfile
 
 from handai.config import Config
 from handai.network import Network, detect_iface, parse_saved_networks, parse_scan_results
-from handai import devices, diagnostics, preferences, skill_catalog, skills
+from handai import devices, diagnostics, hardware_report, power, preferences, skill_catalog, skills
 from handai.providers import Mode, Provider, parse_modes, parse_providers
 from handai.remote import _export_line
 from handai.router import _cd_expr, build_target, session_name
@@ -531,6 +531,49 @@ class TestConfigLoad(unittest.TestCase):
             cfg = Config.load(p)
             self.assertEqual(cfg.mode("cloud").host, "cloud@sandbox")
             self.assertEqual([m.id for m in cfg.modes_for(cfg.provider("hermes"))], ["cloud"])
+
+
+class TestHardwareReport(unittest.TestCase):
+    def test_fixture_passes_required_image_and_device_checks(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            files = {
+                "sys/firmware/devicetree/base/model": "Anbernic RG35XXSP",
+                "sys/class/graphics/fb0/virtual_size": "640,480",
+                "sys/class/graphics/fb0/bits_per_pixel": "32",
+                "proc/bus/input/devices": "N: Name=gamepad\nH: Handlers=event0",
+                "proc/mounts": "/dev/mmcblk0p4 /data ext4 rw 0 0\n",
+                "lib/firmware/rtl8821cs.bin": "firmware",
+            }
+            for name, value in files.items():
+                path = root / name; path.parent.mkdir(parents=True, exist_ok=True); path.write_text(value)
+            for directory in ("dev/input", "sys/class/net/wlan0/wireless", "data", "lib/modules/4.9.170"):
+                (root / directory).mkdir(parents=True, exist_ok=True)
+            (root / "dev/input/event0").touch()
+            for command in ("handai", "python3", "ssh", "tmux", "tailscale", "tailscaled", "qrencode"):
+                path = root / "usr/bin" / command; path.parent.mkdir(parents=True, exist_ok=True); path.touch()
+            results = hardware_report.collect(root)
+            report = hardware_report.build_report(results)
+            self.assertTrue(report["required_ok"])
+            self.assertTrue(next(x for x in results if x.name == "wifi").ok)
+
+    def test_required_failure_controls_report_status(self):
+        report = hardware_report.build_report([
+            hardware_report.Result("display", False, True, "missing"),
+            hardware_report.Result("battery", False, False, "missing"),
+        ])
+        self.assertFalse(report["required_ok"])
+
+
+class TestPower(unittest.TestCase):
+    def test_capabilities_parse_suspend_state(self):
+        with tempfile.TemporaryDirectory() as d:
+            state = Path(d) / "state"; state.write_text("freeze mem disk\n")
+            with patch("handai.power.os.name", "posix"), patch("handai.power.shutil.which", return_value="/sbin/tool"):
+                self.assertEqual(power.capabilities(state), {"shutdown": True, "reboot": True, "suspend": True})
+
+    def test_unknown_action_is_rejected(self):
+        self.assertEqual(power.execute("explode"), (False, "unknown power action"))
 
 
 if __name__ == "__main__":

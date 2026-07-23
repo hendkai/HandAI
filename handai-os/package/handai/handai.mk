@@ -20,6 +20,8 @@ define HANDAI_INSTALL_TARGET_CMDS
 	cp -a $(@D)/handai $(TARGET_DIR)/opt/handai/handai
 	$(INSTALL) -D -m 0755 $(HANDAI_PKGDIR)/handai-launcher \
 		$(TARGET_DIR)/usr/bin/handai
+	$(INSTALL) -D -m 0755 $(HANDAI_PKGDIR)/handai-hardware-report \
+		$(TARGET_DIR)/usr/bin/handai-hardware-report
 	$(INSTALL) -d $(TARGET_DIR)/etc/handai
 	# seed the on-device config from the example if the overlay didn't provide one
 	test -f $(TARGET_DIR)/etc/handai/handai.json || \

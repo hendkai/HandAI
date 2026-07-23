@@ -72,7 +72,7 @@ docs/PHONE_KEYBOARD.md Tailscale-Login + sichere Handy-Tastatur per QR-Pairing
 ## Testen ohne Hardware
 Drei Ebenen, nur die oberste braucht das Gerät (Details in [docs/TESTING.md](docs/TESTING.md)):
 ```bash
-make test    # Ebene 1: Kernlogik und lokale Integrationen (64 Tests)
+make test    # Ebene 1: Kernlogik und lokale Integrationen (68 Tests)
 make demo    # Ebene 1: Cockpit-Flow offline mit Fake-Providern (keine Accounts)
 # Ebene 2: ganzes Userland in QEMU aarch64 (mainline-Kernel, keine Vendor-Blobs):
 #   make BR2_EXTERNAL=…/handai-os qemu_aarch64_handai_defconfig && make -j"$(nproc)"
@@ -115,7 +115,7 @@ python -m handai --ui pixel
 ## Aktueller Stand
 - ✅ **Core** (stdlib-only): Config, Provider/Modi, Router (local+ssh, tmux-persistent),
   Session-Inventar, Secret-Store, WLAN, sichere Remote-Token-Provisionierung,
-  On-Screen-Keyboard. **64 Tests grün** (`make test`).
+  On-Screen-Keyboard und Hardware-Abnahmebericht. **68 Tests grün** (`make test`).
 - ✅ **Remote-first Cockpit**, voll d-pad-navigierbar: New session · Sessions (attach/kill) ·
   Providers/Login (getrennte Local-/Remote-Bereiche, OAuth + API-Key) · Network · Settings.
 - ✅ **Distro-Quelle fertig**: Buildroot external tree unter `handai-os/` — drei

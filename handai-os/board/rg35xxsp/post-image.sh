@@ -37,18 +37,20 @@ echo "Extracting matching kernel modules/firmware from the verified template..."
 mkdir -p "$WORK/vendor-root"
 "$MCOPY" -i "$TEMPLATE@@$BOOT_RESOURCE_OFFSET" ::boot/batocera "$WORK/vendor.squashfs"
 "$UNSQUASHFS" -f -d "$WORK/vendor-root" "$WORK/vendor.squashfs" lib/modules lib/firmware >/dev/null
+mkdir -p "$WORK/rootfs"
+cp -a "$TARGET_DIR/." "$WORK/rootfs/"
 if [ -d "$WORK/vendor-root/lib/modules" ]; then
-	mkdir -p "$TARGET_DIR/lib"
-	rm -rf "$TARGET_DIR/lib/modules"
-	cp -a "$WORK/vendor-root/lib/modules" "$TARGET_DIR/lib/modules"
+	mkdir -p "$WORK/rootfs/lib"
+	rm -rf "$WORK/rootfs/lib/modules"
+	cp -a "$WORK/vendor-root/lib/modules" "$WORK/rootfs/lib/modules"
 fi
 if [ -d "$WORK/vendor-root/lib/firmware" ]; then
-	mkdir -p "$TARGET_DIR/lib"
-	cp -a "$WORK/vendor-root/lib/firmware" "$TARGET_DIR/lib/firmware"
+	mkdir -p "$WORK/rootfs/lib"
+	cp -a "$WORK/vendor-root/lib/firmware" "$WORK/rootfs/lib/firmware"
 fi
 
 echo "Building HandAI SquashFS..."
-"$MKSQUASHFS" "$TARGET_DIR" "$WORK/handai.squashfs" -noappend -comp gzip -all-root >/dev/null
+"$MKSQUASHFS" "$WORK/rootfs" "$WORK/handai.squashfs" -noappend -comp gzip -all-root >/dev/null
 
 SDCARD="$BINARIES_DIR/sdcard.img"
 cp --reflink=auto "$TEMPLATE" "$SDCARD"

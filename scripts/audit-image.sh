@@ -38,7 +38,10 @@ require_file() {
 }
 for path in \
 	opt/handai/handai/pixelgui.py \
+	opt/handai/handai/hardware_report.py \
+	opt/handai/handai/power.py \
 	usr/bin/handai \
+	usr/bin/handai-hardware-report \
 	etc/init.d/S99handai \
 	usr/bin/python3 \
 	usr/bin/ssh \

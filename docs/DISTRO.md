@@ -194,4 +194,5 @@ und mit **balenaEtcher** oder **Rufus** flashen.
 - WLAN-Interface und Scan auf der konkreten Hardware; passende Module/Firmware
   werden bereits aus derselben geprüften KNULLI-Vorlage wie der Kernel importiert.
 - Framebuffer-Auflösung/Rotation (640×480, ggf. gedreht) für das SDL-Frontend.
-- Batterie-/Poweroff-Handling (sichere Session-Beendigung bei Low-Battery).
+- Akku-/Deckelsensor-Erkennung und Suspend-Aufwachen auf dem echten Gerät. Manuelles
+  Suspend, Reboot und sicheres Ausschalten sind bereits bestätigungspflichtig im GUI.
