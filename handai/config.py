@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 
 from .providers import Mode, Provider, parse_modes, parse_providers
@@ -23,6 +24,20 @@ def _expand(obj):
     if isinstance(obj, dict):
         return {k: _expand(v) for k, v in obj.items()}
     return obj
+
+
+_UNRESOLVED_ENV = re.compile(r"\$(?:\{[A-Za-z_][A-Za-z0-9_]*\}|[A-Za-z_][A-Za-z0-9_]*)")
+
+
+def _mode_is_configured(mode: Mode) -> bool:
+    """Hide remote presets whose environment-backed target was never set.
+
+    ``os.path.expandvars`` deliberately leaves an unknown variable untouched.
+    Passing that literal value to ssh would expose a dead entry in the device
+    menu and produce a confusing connection failure.
+    """
+    target = mode.host or mode.endpoint or ""
+    return mode.transport == "local" or not _UNRESOLVED_ENV.search(target)
 
 
 def config_path() -> Path:
@@ -79,9 +94,10 @@ class Config:
     def load(cls, path: Path | None = None) -> "Config":
         path = path or config_path()
         raw = _expand(json.loads(Path(path).read_text("utf-8")))
+        modes = parse_modes(raw.get("modes", []))
         cfg = cls(
             providers=parse_providers(raw.get("providers", [])),
-            modes=parse_modes(raw.get("modes", [])),
+            modes=[mode for mode in modes if _mode_is_configured(mode)],
             recent=list(raw.get("recent_workdirs", [])),
             skills=dict(raw.get("skills", {})),
         )

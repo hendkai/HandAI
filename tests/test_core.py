@@ -1013,6 +1013,24 @@ class TestConfigLoad(unittest.TestCase):
             self.assertEqual(cfg.mode("cloud").host, "cloud@sandbox")
             self.assertEqual([m.id for m in cfg.modes_for(cfg.provider("hermes"))], ["cloud"])
 
+    def test_unresolved_remote_target_is_hidden(self):
+        cfg_data = {
+            "providers": [{"id": "codex", "command": ["codex"],
+                           "allowed_modes": ["local", "cloud"]}],
+            "modes": [
+                {"id": "local", "transport": "local"},
+                {"id": "cloud", "transport": "ssh", "host": "${MISSING_HANDAI_TEST_HOST}"},
+            ],
+        }
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "c.json"
+            p.write_text(json.dumps(cfg_data), "utf-8")
+            with patch.dict(os.environ, {}, clear=False):
+                os.environ.pop("MISSING_HANDAI_TEST_HOST", None)
+                cfg = Config.load(p)
+            self.assertEqual([mode.id for mode in cfg.modes], ["local"])
+            self.assertIsNone(cfg.mode("cloud"))
+
 
 class TestHardwareReport(unittest.TestCase):
     def test_fixture_passes_required_image_and_device_checks(self):
