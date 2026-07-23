@@ -86,6 +86,45 @@ def _wpa(*args: str, timeout: float = 8.0) -> tuple[int, str]:
         return 1, ""
 
 
+def _bring_up() -> bool:
+    """Retry the board bring-up hook when the GUI beats the boot-time worker."""
+    script = Path(os.environ.get("HANDAI_NET_UP", "/opt/handai/net/up.sh"))
+    if not script.is_file():
+        return False
+    try:
+        result = subprocess.run(
+            [str(script)], capture_output=True, text=True, timeout=25.0
+        )
+        return result.returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
+def _ensure_control() -> tuple[bool, str]:
+    """Ensure the radio and wpa_supplicant control socket are ready.
+
+    S99handai starts networking in the background so boot remains responsive.
+    A fast user can therefore open Network before the SDIO driver has appeared.
+    Retry the same idempotent bring-up script synchronously instead of reporting
+    an empty scan in that race.
+    """
+    iface = _iface()
+    if (Path("/sys/class/net") / iface).exists():
+        rc, pong = _wpa("ping")
+        if rc == 0 and "PONG" in pong:
+            return True, iface
+    _bring_up()
+    iface = _iface()
+    if not (Path("/sys/class/net") / iface).exists():
+        return False, f"WIFI INTERFACE {iface} NOT FOUND"
+    for _ in range(20):
+        rc, pong = _wpa("ping")
+        if rc == 0 and "PONG" in pong:
+            return True, iface
+        time.sleep(0.25)
+    return False, f"WPA_SUPPLICANT NOT READY ON {iface}"
+
+
 def parse_scan_results(text: str) -> list[Network]:
     """Parse `wpa_cli scan_results` output -> networks, strongest per SSID first.
 
@@ -117,14 +156,11 @@ def scan() -> list[Network]:
     if not available():
         _last_scan_error = "WPA_CLI IS NOT INSTALLED"
         return []
-    iface = _iface()
-    if not (Path("/sys/class/net") / iface).exists():
-        _last_scan_error = f"WIFI INTERFACE {iface} NOT FOUND"
+    ready, detail = _ensure_control()
+    if not ready:
+        _last_scan_error = detail
         return []
-    rc, pong = _wpa("ping")
-    if rc != 0 or "PONG" not in pong:
-        _last_scan_error = f"WPA_SUPPLICANT NOT READY ON {iface}"
-        return []
+    iface = detail
     rc, response = _wpa("scan")
     busy = "FAIL-BUSY" in response
     if (rc != 0 or "FAIL" in response) and not busy:

@@ -710,6 +710,17 @@ class TestIfaceDetect(unittest.TestCase):
 class TestWifiScanFlow(unittest.TestCase):
     @patch("handai.network.time.sleep")
     @patch("handai.network.Path.exists", return_value=True)
+    @patch("handai.network._bring_up", return_value=True)
+    @patch("handai.network._wpa")
+    @patch("handai.network._iface", return_value="wlan0")
+    def test_control_is_recovered_when_gui_opens_before_boot_worker(
+            self,_iface,wpa,bring_up,_exists,_sleep):
+        wpa.side_effect=[(1,""),(0,"PONG\n")]
+        self.assertEqual(network._ensure_control(),(True,"wlan0"))
+        bring_up.assert_called_once_with()
+
+    @patch("handai.network.time.sleep")
+    @patch("handai.network.Path.exists", return_value=True)
     @patch("handai.network._wpa")
     @patch("handai.network._iface", return_value="wlan0")
     @patch("handai.network.available", return_value=True)
