@@ -44,6 +44,7 @@ handai/                Core (stdlib-only Python) + curses-Referenz-UI
   hermes_remote.py     Terminal-Client für die offizielle Hermes Sessions API
   skills.py            zentraler Skills-Hub: Install aus dem Internet + Tool-Adapter
   audio.py             Mikrofone, Bluetooth HFP und lokale whisper.cpp-Transkription
+  music.py             CC0-Chiptune-Auswahl, Loop-Player und automatische Provider-Themes
   osk.py               On-Screen-Keyboard (nur d-pad + A/B)
   pixelgui.py          SDL2-Pixel-Art-GUI (640x480, Gamepad + Bildschirmtastatur)
   cockpit.py           curses-Fallback: New session · Sessions · Providers · Skills · Network · Settings
@@ -58,6 +59,7 @@ docs/PROVIDERS.md      Provider hinzufügen, Auth, Remote-Token-Bereitstellung
 docs/SKILLS.md         Zentraler Skills-Hub: Install aus dem Internet, Tool-Adapter
 docs/PHONE_KEYBOARD.md Tailscale-Login + sichere Handy-Tastatur per QR-Pairing
 docs/VOICE_INPUT.md    Mikrofon-, Bluetooth- und Sprachmodell-Einrichtung
+docs/CHIPTUNE_ALBUM.md Kuratierte Menue- und Provider-Soundtrack-Auswahl
 ```
 
 ## Steuerung — alles mit den Handheld-Tasten?
@@ -143,6 +145,9 @@ python -m handai --ui pixel
   Push-to-talk, lokale mehrsprachige whisper.cpp-Transkription und Versand des
   editierbaren Textes an lokale oder entfernte Agent-Sessions. Kein Audio-Upload
   und kein API-Key erforderlich; Details in [docs/VOICE_INPUT.md](docs/VOICE_INPUT.md).
+- ✅ **Kuratiertes CC0-Chiptune-Album**: sechs offline mitgelieferte, vollständige Tracks mit
+  Hauptmenü-Theme und eigenen Themes für Claude, Codex, Hermes, OpenCode und
+  OpenClaw; Lautstärke, An/Aus und Trackwahl liegen in den Settings.
 - ✅ **Gamepad-Skillkatalog**: Top/Most-downloaded, Trending und Hot von skills.sh
   durchsuchen und installieren, ohne eine Repository-Adresse eintippen zu müssen.
 - ✅ **Remote-Geräte-Assistent**: SSH-Rechner mit Key-Pairing und Diagnose sowie

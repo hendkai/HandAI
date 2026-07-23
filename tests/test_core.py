@@ -20,7 +20,7 @@ import zipfile
 
 from handai.config import Config
 from handai.network import Network, detect_iface, parse_saved_networks, parse_scan_results
-from handai import audio, devices, diagnostics, hardware_report, power, preferences, skill_catalog, skills
+from handai import audio, devices, diagnostics, hardware_report, music, power, preferences, skill_catalog, skills
 from handai.providers import Mode, Provider, parse_modes, parse_providers
 from handai.remote import _export_line
 from handai.router import _cd_expr, build_target, session_name
@@ -608,6 +608,31 @@ class TestVoiceInput(unittest.TestCase):
     def test_model_checksum_is_pinned(self):
         self.assertEqual(len(audio.MODEL_SHA256),64)
         self.assertTrue(all(c in "0123456789abcdef" for c in audio.MODEL_SHA256))
+
+
+class TestChiptuneAlbum(unittest.TestCase):
+    def test_album_has_menu_and_every_provider_theme(self):
+        self.assertEqual([track.id for track in music.TRACKS],
+                         ["main","claude","codex","hermes","opencode","openclaw"])
+        self.assertEqual(music.theme_for_provider("claude-remote"),"claude")
+        self.assertEqual(music.theme_for_provider("openclaw-gateway"),"openclaw")
+        self.assertEqual(music.theme_for_provider("unknown"),"main")
+
+    def test_all_curated_tracks_are_valid_offline_assets(self):
+        for track in music.TRACKS:
+            path=music.track_path(track)
+            self.assertTrue(path.exists(),path)
+            with wave.open(str(path),"rb") as wav_file:
+                self.assertEqual((wav_file.getnchannels(),wav_file.getsampwidth(),wav_file.getframerate()),
+                                 (1,2,22050))
+                self.assertGreater(wav_file.getnframes(),22050*30)
+
+    def test_digital_music_volume_scales_pcm(self):
+        with tempfile.TemporaryDirectory() as d, patch.dict(os.environ,{"HANDAI_STATE":d}):
+            original=audio.analyze_wav(music.track_path("main"))
+            quieter=audio.analyze_wav(music.scaled_track(music.TRACK_BY_ID["main"],25))
+            self.assertLess(quieter.rms_percent,original.rms_percent)
+            self.assertLess(quieter.peak_percent,original.peak_percent)
 
 
 class TestConfigLoad(unittest.TestCase):

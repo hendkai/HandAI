@@ -39,6 +39,13 @@ require_file() {
 for path in \
 	opt/handai/handai/pixelgui.py \
 	opt/handai/handai/audio.py \
+	opt/handai/handai/music.py \
+	opt/handai/handai/assets/music/01-pocket-signal.wav \
+	opt/handai/handai/assets/music/02-copper-constellation.wav \
+	opt/handai/handai/assets/music/03-green-compile.wav \
+	opt/handai/handai/assets/music/04-wingbeat-relay.wav \
+	opt/handai/handai/assets/music/05-blue-brackets.wav \
+	opt/handai/handai/assets/music/06-crimson-pincers.wav \
 	opt/handai/handai/hardware_report.py \
 	opt/handai/handai/power.py \
 	usr/bin/handai \

@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Sequence, TypeVar
 
-from . import audio, compose, devices, diagnostics, hardware_report, network, phone, power, preferences, remote, skill_catalog, skills, tailscale, tmux
+from . import audio, compose, devices, diagnostics, hardware_report, music, network, phone, power, preferences, remote, skill_catalog, skills, tailscale, tmux
 from .config import Config, config_path
 from .providers import Mode, Provider
 from .router import build_target
@@ -264,6 +264,7 @@ class PixelCockpit:
     def __init__(self,cfg:Config,secrets:SecretStore,ui:SDL):
         self.cfg=cfg; self.secrets=secrets; self.ui=ui; self.status="SYSTEM READY"
         self.hub=skills.hub_dir(cfg.skills_dir)
+        self.music=music.MusicPlayer()
 
     def chrome(self,title:str,subtitle:str=""):
         u=self.ui; u.clear(); u.rect(0,0,640,58,u.PANEL); u.rect(0,55,640,3,u.CYAN)
@@ -391,10 +392,11 @@ class PixelCockpit:
             elif e in ("cancel","quit"): return None
 
     def interactive(self,argv:list[str]):
+        self.music.pause()
         self.ui.close()
         try: subprocess.call(argv)
         except OSError as e: self.status=f"LAUNCH FAILED: {e}"
-        finally: self.ui.open()
+        finally:self.ui.open();self.music.resume()
 
     def env(self,p:Provider):
         if p.supports_auth("token-env") and p.token_env:
@@ -445,18 +447,21 @@ class PixelCockpit:
     def provider_hub(self,p:Provider):
         modes=self.cfg.modes_for(p);remote_modes=[m for m in modes if m.is_remote]
         actions=provider_actions(p,modes)
-        while True:
-            act=self.provider_menu(p,actions)
-            if act in (None,"BACK"):return
-            if act=="START NEW SESSION":self.start_provider_session(p)
-            elif act=="OAUTH / ACCOUNT":self.provider_account(p,modes)
-            elif act=="REMOTE TARGETS":self.provider_targets(p,remote_modes,False)
-            elif act=="TEST CONNECTION":self.provider_targets(p,remote_modes,True)
-            elif act=="PROVIDER SKILLS":self.provider_skills(p,remote_modes)
-            elif act=="ACTIVE SESSIONS":self.provider_sessions(p)
-            elif act=="ABOUT PROVIDER":
-                brand=provider_brand(p.id);local=any(not m.is_remote for m in modes)
-                self.toast(brand.wordmark,[brand.tagline,f"COMMAND: {' '.join(p.command)}",f"LOCAL: {'YES' if local else 'NO'}  REMOTE TARGETS: {len(remote_modes)}",f"AUTH: {' + '.join(p.auth_methods or [p.auth])}","UNOFFICIAL HANDHELD CLIENT UI"])
+        self.music.play(music.theme_for_provider(p.id))
+        try:
+            while True:
+                act=self.provider_menu(p,actions)
+                if act in (None,"BACK"):return
+                if act=="START NEW SESSION":self.start_provider_session(p)
+                elif act=="OAUTH / ACCOUNT":self.provider_account(p,modes)
+                elif act=="REMOTE TARGETS":self.provider_targets(p,remote_modes,False)
+                elif act=="TEST CONNECTION":self.provider_targets(p,remote_modes,True)
+                elif act=="PROVIDER SKILLS":self.provider_skills(p,remote_modes)
+                elif act=="ACTIVE SESSIONS":self.provider_sessions(p)
+                elif act=="ABOUT PROVIDER":
+                    brand=provider_brand(p.id);local=any(not m.is_remote for m in modes)
+                    self.toast(brand.wordmark,[brand.tagline,f"COMMAND: {' '.join(p.command)}",f"LOCAL: {'YES' if local else 'NO'}  REMOTE TARGETS: {len(remote_modes)}",f"AUTH: {' + '.join(p.auth_methods or [p.auth])}","UNOFFICIAL HANDHELD CLIENT UI"])
+        finally:self.music.play("main")
 
     def provider_account(self,p:Provider,modes:Sequence[Mode]):
         targets=[m for m in modes if not m.is_remote or m.is_ssh]
@@ -685,7 +690,9 @@ class PixelCockpit:
         self.draw_busy("PLAYING SPEAKER / HEADPHONE TONE")
         try:tone=audio.make_test_tone()
         except (OSError,ValueError) as e:self.toast(f"TEST FILE FAILED: {e}");return
-        ok,msg=audio.play_audio(tone,sink)
+        self.music.pause()
+        try:ok,msg=audio.play_audio(tone,sink)
+        finally:self.music.resume()
         self.toast("OUTPUT TEST COMPLETE" if ok else "OUTPUT TEST FAILED",
                    [msg,f"DEVICE: {sink.label if sink else 'SYSTEM DEFAULT'}",f"FILE: {tone}"])
 
@@ -693,8 +700,9 @@ class PixelCockpit:
         if not source:
             self.toast("NO MICROPHONE SELECTED",["SELECT A MICROPHONE OR PAIR A BLUETOOTH HFP HEADSET."]);return
         wav=audio.state_dir()/"mic-test.wav"
+        self.music.pause()
         try:process=audio.start_recording(source,wav)
-        except OSError as e:self.toast(f"MICROPHONE START FAILED: {e}");return
+        except OSError as e:self.music.resume();self.toast(f"MICROPHONE START FAILED: {e}");return
         u=self.ui;self.chrome("MICROPHONE TEST",source.label[:78]);u.frame(42,115,556,235,u.PINK,5)
         u.text(134,145,"SPEAK NOW",u.YELLOW,4,max_chars=20)
         for i,height in enumerate((22,52,96,38,120,68,30,106,56,86,42,112,62,28,76,98)):
@@ -703,6 +711,7 @@ class PixelCockpit:
         self.footer("A / B / START  FINISH RECORDING");u.present()
         while u.event() not in ("a","b","done","cancel","quit"):pass
         ok,msg=audio.stop_recording(process)
+        self.music.resume()
         if not ok or not wav.exists() or wav.stat().st_size<=44:
             self.toast("MICROPHONE RECORDING FAILED",[msg or "NO AUDIO DATA RECEIVED"]);return
         try:signal=audio.analyze_wav(wav)
@@ -725,7 +734,9 @@ class PixelCockpit:
             if action in (None,"BACK"):return
             if action=="PLAY RECORDING":
                 sink=audio.selected_sink();self.draw_busy("PLAYING MIC RECORDING")
-                played,detail=audio.play_audio(wav,sink)
+                self.music.pause()
+                try:played,detail=audio.play_audio(wav,sink)
+                finally:self.music.resume()
                 self.toast("MIC PLAYBACK COMPLETE" if played else "MIC PLAYBACK FAILED",[detail])
             elif action=="TEST SPEECH RECOGNITION":
                 if not audio.whisper_available() or not audio.model_path().exists():
@@ -768,8 +779,60 @@ class PixelCockpit:
                 if not files:self.toast("NO AUDIO TEST FILES YET",["RUN A SPEAKER OR MICROPHONE TEST FIRST."]);continue
                 chosen=self.pick("AUDIO TEST FILES",files,lambda p:f"{p.name}  {p.stat().st_size//1024} KB")
                 if chosen:
-                    played,detail=audio.play_audio(chosen,sink)
+                    self.music.pause()
+                    try:played,detail=audio.play_audio(chosen,sink)
+                    finally:self.music.resume()
                     self.toast("PLAYBACK COMPLETE" if played else "PLAYBACK FAILED",[detail])
+
+    def adjust_music_level(self):
+        level=music.volume()
+        while True:
+            u=self.ui;self.chrome("MUSIC VOLUME",music.ALBUM_TITLE)
+            u.frame(54,137,532,150,u.CYAN,4);u.text(88,163,f"{level:3d}%",u.YELLOW,5,max_chars=5)
+            u.rect(88,232,464,28,u.PANEL2)
+            if level:u.rect(88,232,round(464*level/100),28,u.GREEN)
+            u.text(89,315,"DIGITAL CHIPTUNE LEVEL",u.CYAN,2,max_chars=30)
+            self.footer("LEFT/RIGHT 5%  UP/DOWN 10%  B SAVE");u.present()
+            event=u.event()
+            if event in ("b","cancel","quit"):return
+            if event=="left":level=max(0,level-5)
+            elif event=="right":level=min(100,level+5)
+            elif event=="down":level=max(0,level-10)
+            elif event=="up":level=min(100,level+10)
+            else:continue
+            music.save_settings(music.enabled(),level);self.music.refresh()
+
+    def music_settings(self):
+        previous=self.music.theme or "main"
+        try:
+            while True:
+                on=music.enabled();level=music.volume()
+                current=music.TRACK_BY_ID.get(self.music.theme or "main",music.TRACKS[0])
+                act=self.pick("CHIPTUNE ALBUM",[
+                    f"MUSIC: {'ON' if on else 'OFF'}",
+                    f"MUSIC VOLUME: {level}%",
+                    f"NOW PLAYING: {current.title}",
+                    "ALBUM / CHOOSE TRACK",
+                    "ABOUT THE SOUNDTRACK",
+                    "BACK",
+                ],subtitle=music.ALBUM_TITLE)
+                if act in (None,"BACK"):return
+                if act.startswith("MUSIC:"):
+                    music.save_settings(not on,level);self.music.refresh()
+                elif act.startswith("MUSIC VOLUME"):self.adjust_music_level()
+                elif act=="ALBUM / CHOOSE TRACK":
+                    track=self.pick(music.ALBUM_TITLE,music.TRACKS,
+                                    lambda t:f"{t.title} [{t.screen}]",
+                                    subtitle="6 CURATED CC0 OFFLINE CHIPTUNE THEMES")
+                    if track:self.music.play(track.id);self.status=f"NOW PLAYING: {track.title}"
+                elif act=="ABOUT THE SOUNDTRACK":
+                    self.toast(music.ALBUM_TITLE,[
+                        "6 FULL-LENGTH CC0 CHIPTUNE TRACKS.",
+                        "COMPOSED BY ZANE LITTLE MUSIC.",
+                        "PROVIDER HOMES SWITCH THEMES AUTOMATICALLY.",
+                        "SOURCE AND LICENSE ARE INCLUDED OFFLINE.",
+                    ])
+        finally:self.music.play(previous)
 
     def bluetooth_headsets(self):
         if not shutil.which("bluetoothctl"):self.toast("BLUETOOTH CONTROL IS NOT INSTALLED");return
@@ -801,8 +864,9 @@ class PixelCockpit:
         session=self.pick("VOICE TARGET",sessions,lambda x:f"{x.name} [{x.host or 'DEVICE'}]")
         if not session:return
         wav=audio.recording_path()
+        self.music.pause()
         try:process=audio.start_recording(source,wav)
-        except OSError as e:self.toast(f"MICROPHONE START FAILED: {e}");return
+        except OSError as e:self.music.resume();self.toast(f"MICROPHONE START FAILED: {e}");return
         u=self.ui;self.chrome("LISTENING",source.label[:78]);u.frame(70,130,500,190,u.PINK,5)
         # Visual feedback without reading from the capture process.
         for i,height in enumerate((20,54,88,44,112,70,36,96,58,24,74,104,48,82,30)):
@@ -811,6 +875,7 @@ class PixelCockpit:
         self.footer("A / B / START  STOP RECORDING");u.present()
         while u.event() not in ("a","b","done","cancel","quit"):pass
         ok,msg=audio.stop_recording(process)
+        self.music.resume()
         if not ok or not wav.exists() or wav.stat().st_size<=44:
             self.toast("RECORDING FAILED",[msg or "NO AUDIO DATA RECEIVED"]);return
         self.draw_busy("TRANSCRIBING LOCALLY")
@@ -880,8 +945,9 @@ class PixelCockpit:
             return
 
     def settings(self):
-        act=self.pick("SETTINGS",["AUDIO / MIC TEST","REMOTE DEVICES","SYSTEM DIAGNOSTICS","HARDWARE ACCEPTANCE REPORT","SYSTEM POWER","SECURE CREDENTIALS WITH PIN","GAMEPAD CALIBRATION","RUN SETUP WIZARD","CHOOSE PIXEL SKIN","SYSTEM STATUS"],subtitle=f"ACTIVE SKIN: {self.ui.theme.label}")
+        act=self.pick("SETTINGS",["AUDIO / MIC TEST","MUSIC / CHIPTUNE ALBUM","REMOTE DEVICES","SYSTEM DIAGNOSTICS","HARDWARE ACCEPTANCE REPORT","SYSTEM POWER","SECURE CREDENTIALS WITH PIN","GAMEPAD CALIBRATION","RUN SETUP WIZARD","CHOOSE PIXEL SKIN","SYSTEM STATUS"],subtitle=f"ACTIVE SKIN: {self.ui.theme.label}")
         if act=="AUDIO / MIC TEST":self.audio_settings()
+        elif act=="MUSIC / CHIPTUNE ALBUM":self.music_settings()
         elif act=="REMOTE DEVICES": self.remote_devices()
         elif act=="SYSTEM DIAGNOSTICS":
             ok,lines=diagnostics.summary();self.toast("ALL CHECKS PASSED" if ok else "HARDWARE CHECKS NEED ATTENTION",lines)
@@ -1047,6 +1113,7 @@ class PixelCockpit:
     def run(self):
         self.unlock_credentials()
         self.first_run()
+        self.music.play("main")
         # Optional kiosk/development deep-link; normal navigation uses the same hub.
         direct=os.environ.pop("HANDAI_PROVIDER_HOME","")
         if direct:
@@ -1054,6 +1121,7 @@ class PixelCockpit:
             if provider:self.provider_hub(provider)
         if os.environ.pop("HANDAI_VOICE_HOME","")=="1":self.voice_input()
         if os.environ.pop("HANDAI_AUDIO_HOME","")=="1":self.audio_settings()
+        if os.environ.pop("HANDAI_MUSIC_HOME","")=="1":self.music_settings()
         menu=[("NEW SESSION",self.new_session),("ACTIVE SESSIONS",self.sessions),("PROVIDERS / LOGIN",self.providers),("SKILLS HUB",self.skill_screen),("NETWORK",self.network),("VOICE INPUT",self.voice_input),("PHONE KEYBOARD",self.phone_keyboard),("INSTALL LOCAL AGENTS",self.install_agents),("SETTINGS",self.settings),("QUIT",None)]
         idx=0
         while True:
@@ -1081,5 +1149,6 @@ class PixelCockpit:
 
 def main(config:Config,secrets:SecretStore):
     ui=SDL()
-    try:PixelCockpit(config,secrets,ui).run()
-    finally:ui.close()
+    cockpit=PixelCockpit(config,secrets,ui)
+    try:cockpit.run()
+    finally:cockpit.music.close();ui.close()
