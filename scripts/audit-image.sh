@@ -70,6 +70,7 @@ for path in \
 	usr/bin/qrencode \
 	usr/bin/arecord \
 	usr/bin/amixer \
+	opt/handai/net/chip.sh \
 	usr/bin/pw-record \
 	usr/bin/wpctl \
 	usr/bin/wireplumber \

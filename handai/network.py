@@ -19,6 +19,8 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+_last_scan_error = ""
+
 
 def _sys_is_wireless(name: str) -> bool:
     base = Path("/sys/class/net") / name
@@ -110,14 +112,38 @@ def parse_scan_results(text: str) -> list[Network]:
 
 
 def scan() -> list[Network]:
+    global _last_scan_error
+    _last_scan_error = ""
     if not available():
+        _last_scan_error = "WPA_CLI IS NOT INSTALLED"
         return []
-    _wpa("scan")
-    time.sleep(2.0)  # let the scan populate
-    rc, out = _wpa("scan_results")
-    if rc != 0:
+    iface = _iface()
+    if not (Path("/sys/class/net") / iface).exists():
+        _last_scan_error = f"WIFI INTERFACE {iface} NOT FOUND"
         return []
-    return parse_scan_results(out)
+    rc, pong = _wpa("ping")
+    if rc != 0 or "PONG" not in pong:
+        _last_scan_error = f"WPA_SUPPLICANT NOT READY ON {iface}"
+        return []
+    rc, response = _wpa("scan")
+    if rc != 0 or "FAIL" in response:
+        _last_scan_error = f"WIFI SCAN COULD NOT START ON {iface}"
+        return []
+    # SDIO radios can take several seconds to report their first completed scan.
+    for _ in range(16):
+        time.sleep(0.5)
+        rc, out = _wpa("scan_results")
+        if rc != 0:
+            continue
+        networks = parse_scan_results(out)
+        if networks:
+            return networks
+    _last_scan_error = f"NO VISIBLE WIFI NETWORKS FOUND ON {iface}"
+    return []
+
+
+def scan_error() -> str:
+    return _last_scan_error
 
 
 def connect(ssid: str, psk: str | None, timeout_s: int = 20) -> bool:

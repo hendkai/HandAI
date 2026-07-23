@@ -804,7 +804,9 @@ class PixelCockpit:
         if act in ("SCAN AND CONNECT","SAVED NETWORKS","WIFI STATUS") and not network.available():self.toast("WIFI CONTROL UNAVAILABLE - NO WPA_CLI");return
         if act=="WIFI STATUS":self.toast(network.status())
         elif act=="SCAN AND CONNECT":
-            self.draw_busy("SCANNING WIFI"); nets=network.scan(); n=self.pick("WIFI NETWORKS",nets,lambda x:f"{'*' if x.secured else ' '} {x.ssid} {x.signal} DBM")
+            self.draw_busy("SCANNING WIFI"); nets=network.scan()
+            if not nets:self.toast(network.scan_error() or "NO WIFI NETWORKS FOUND");return
+            n=self.pick("WIFI NETWORKS",nets,lambda x:f"{'*' if x.secured else ' '} {x.ssid} {x.signal} DBM")
             if not n:return
             psk=self.prompt(f"PASSWORD / {n.ssid}",secret=True) if n.secured else None
             if n.secured and psk is None:return
