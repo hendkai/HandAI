@@ -1383,7 +1383,7 @@ class PixelCockpit:
                 except ValueError as e:self.toast(str(e));continue
                 dev=devices.RemoteDevice(devices.slug(label),label,"hermes-api",address,"~")
                 devices.upsert(dev);self.cfg.reload_devices()
-                token=self.prompt("HERMES API ACCESS TOKEN","",True)
+                token=self.prompt("REMOTE LOGIN TOKEN","",True)
                 if token:self.secrets.set("gateway:managed-"+dev.id,token)
                 self.status=f"ADDED HERMES SERVER {label}"
             else:

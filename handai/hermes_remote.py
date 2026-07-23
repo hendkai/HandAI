@@ -49,7 +49,7 @@ def main(argv=None)->int:
     args=parser.parse_args(argv)
     key=os.environ.get("HERMES_REMOTE_API_KEY","")
     if not args.url or not key:
-        print("Hermes remote URL/API credential is missing.");return 2
+        print("Hermes remote URL/login token is missing.");return 2
     client=HermesRemote(args.url,key)
     try:client.capabilities()
     except Exception as e:print(f"Connection failed: {e}");return 1
