@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Repaint the pinned vendor BMP as a HandAI-branded 640x480 boot logo."""
+"""Composite HandAI artwork into the pinned vendor's exact BMP container."""
 
 from __future__ import annotations
 
@@ -10,6 +10,11 @@ from pathlib import Path
 
 def main() -> int:
     source, destination = map(Path, sys.argv[1:3])
+    artwork = (
+        Path(sys.argv[3])
+        if len(sys.argv) > 3
+        else Path(__file__).with_name("assets") / "handai-boot-art-v2.bmp"
+    )
     data = bytearray(source.read_bytes())
     if data[:2] != b"BM":
         raise SystemExit("boot logo template is not a BMP")
@@ -19,12 +24,31 @@ def main() -> int:
     if (width, abs(height), bits) != (640, 480, 32):
         raise SystemExit(f"unexpected boot logo format: {width}x{height}x{bits}")
 
+    art = artwork.read_bytes()
+    if art[:2] != b"BM":
+        raise SystemExit("HandAI boot artwork is not a BMP")
+    art_offset = struct.unpack_from("<I", art, 10)[0]
+    art_width, art_height = struct.unpack_from("<ii", art, 18)
+    art_bits = struct.unpack_from("<H", art, 28)[0]
+    if (art_width, abs(art_height), art_bits) != (640, 480, 32):
+        raise SystemExit(
+            f"unexpected HandAI artwork format: {art_width}x{art_height}x{art_bits}"
+        )
+
     repo = Path(__file__).resolve().parents[3]
     sys.path.insert(0, str(repo))
     from handai.pixelgui import _FONT
 
     top_down = height < 0
     height = abs(height)
+    art_top_down = art_height < 0
+    art_height = abs(art_height)
+
+    def art_pixel(x: int, y: int) -> tuple[int, int, int]:
+        stored_y = y if art_top_down else art_height - 1 - y
+        position = art_offset + (stored_y * art_width + x) * 4
+        blue, green, red = art[position:position + 3]
+        return red, green, blue
 
     def pixel(x: int, y: int, color: tuple[int, int, int]) -> None:
         if not (0 <= x < width and 0 <= y < height):
@@ -33,6 +57,12 @@ def main() -> int:
         position = offset + (stored_y * width + x) * 4
         red, green, blue = color
         data[position:position + 4] = bytes((blue, green, red, 0xFF))
+
+    def read_pixel(x: int, y: int) -> tuple[int, int, int]:
+        stored_y = y if top_down else height - 1 - y
+        position = offset + (stored_y * width + x) * 4
+        blue, green, red = data[position:position + 3]
+        return red, green, blue
 
     def rect(x: int, y: int, w: int, h: int, color: tuple[int, int, int]) -> None:
         for row in range(y, y + h):
@@ -48,22 +78,31 @@ def main() -> int:
                         rect(x + gx * scale, y + gy * scale, scale, scale, color)
             x += 6 * scale
 
-    background = (7, 13, 27)
     cyan = (47, 226, 216)
     pink = (255, 94, 164)
     yellow = (255, 210, 74)
-    muted = (144, 161, 184)
-    rect(0, 0, width, height, background)
-    rect(0, 0, width, 8, cyan)
-    rect(0, height - 8, width, 8, pink)
-    rect(74, 116, 104, 104, cyan)
-    rect(94, 136, 64, 64, background)
-    rect(108, 150, 14, 14, yellow)
-    rect(134, 150, 14, 14, yellow)
-    text(214, 122, "HANDAI", yellow, 8)
-    text(218, 192, "PIXEL COCKPIT OS", cyan, 3)
-    text(160, 326, "BOOTING HANDHELD AI", muted, 3)
-    text(218, 382, "RG35XXSP / H700", pink, 2)
+    panel = (5, 8, 24)
+
+    for y in range(height):
+        for x in range(width):
+            pixel(x, y, art_pixel(x, y))
+
+    # A mostly opaque pixel panel guarantees title readability while preserving
+    # the generated network/portal illustration around it.
+    for y in range(18, 119):
+        for x in range(18, 326):
+            current = read_pixel(x, y)
+            pixel(
+                x,
+                y,
+                tuple((channel + base * 4) // 5 for channel, base in zip(current, panel)),
+            )
+    rect(18, 18, 308, 4, cyan)
+    rect(18, 115, 308, 4, pink)
+    rect(18, 18, 4, 101, cyan)
+    rect(322, 18, 4, 101, pink)
+    text(40, 35, "HANDAI", yellow, 6)
+    text(42, 84, "REMOTE AI COCKPIT", cyan, 2)
     destination.write_bytes(data)
     return 0
 
