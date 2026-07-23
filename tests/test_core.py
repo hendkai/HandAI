@@ -25,7 +25,7 @@ import tarfile
 import zipfile
 
 from handai.config import Config
-from handai.network import Network, detect_iface, parse_saved_networks, parse_scan_results
+from handai.network import Network, _psk_value, _wep_value, _wpa_string, detect_iface, parse_saved_networks, parse_scan_results
 from handai import audio, bootdiag, demo, devices, diagnostics, hardware_report, music, network, oauth, power, preferences, skill_catalog, skills
 from handai.providers import Mode, OAuthProfile, Provider, parse_modes, parse_providers
 from handai.remote import _export_line
@@ -719,12 +719,22 @@ class TestWifiScanParse(unittest.TestCase):
         home = nets[0]
         self.assertEqual(home.signal, -45)     # kept the -45, not the -70 dup
         self.assertTrue(home.secured)
+        self.assertEqual(home.security,"wpa")
         cafe = nets[1]
         self.assertFalse(cafe.secured)          # [ESS] with no WPA/WEP/RSN = open
+        self.assertEqual(cafe.security,"open")
 
     def test_empty_and_headeronly(self):
         self.assertEqual(parse_scan_results(""), [])
         self.assertEqual(parse_scan_results("bssid / freq / signal / flags / ssid\n"), [])
+
+    def test_wifi_credentials_are_encoded_for_wpa_supplicant(self):
+        self.assertEqual(_wpa_string('a"b\\c'),'"a\\"b\\\\c"')
+        self.assertEqual(_psk_value("a-password!"),'"a-password!"')
+        raw="0123456789abcdef"*4
+        self.assertEqual(_psk_value(raw),raw)
+        self.assertEqual(_wep_value("abcde"),'"abcde"')
+        with self.assertRaises(ValueError):_psk_value("short")
 
 
 class TestIfaceDetect(unittest.TestCase):
@@ -765,6 +775,19 @@ class TestWifiScanFlow(unittest.TestCase):
         wpa.side_effect=[(0,"PONG\n"),(0,"FAIL-BUSY\n"),(0,rows)]
         self.assertEqual([item.ssid for item in network.scan()],["Home"])
         self.assertEqual(network.scan_error(),"")
+
+    @patch("handai.network.status_raw",return_value="wpa_state=COMPLETED\n")
+    @patch("handai.network._find_saved",return_value="3")
+    @patch("handai.network._wpa",return_value=(0,"OK\n"))
+    @patch("handai.network.available",return_value=True)
+    def test_connect_configures_escaped_wpa_credentials(
+            self,_available,wpa,_saved,_status):
+        self.assertTrue(network.connect('Home "5G"','slash\\quote"pass',
+                                        timeout_s=0,security="wpa"))
+        calls=[call.args for call in wpa.call_args_list]
+        self.assertIn(("set_network","3","ssid",'"Home \\"5G\\""'),calls)
+        self.assertIn(("set_network","3","key_mgmt","WPA-PSK"),calls)
+        self.assertIn(("set_network","3","psk",'"slash\\\\quote\\"pass"'),calls)
 
 
 class TestSavedNetworksParse(unittest.TestCase):

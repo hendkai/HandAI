@@ -887,11 +887,17 @@ class PixelCockpit:
         elif act=="SCAN AND CONNECT":
             self.draw_busy("SCANNING WIFI"); nets=network.scan()
             if not nets:self.toast(network.scan_error() or "NO WIFI NETWORKS FOUND");return
-            n=self.pick("WIFI NETWORKS",nets,lambda x:f"{'*' if x.secured else ' '} {x.ssid} {x.signal} DBM")
+            n=self.pick("WIFI NETWORKS",nets,
+                        lambda x:f"{x.security.upper():10} {x.ssid} {x.signal} DBM")
             if not n:return
+            if n.security=="enterprise":
+                self.toast("ENTERPRISE WIFI NEEDS A PRECONFIGURED PROFILE",[
+                    "802.1X USER/CERTIFICATE SETUP IS NOT SAFE TO GUESS.",
+                    "ADD IT TO WPA_SUPPLICANT.CONF, THEN USE SAVED NETWORKS.",
+                ]);return
             psk=self.prompt(f"PASSWORD / {n.ssid}",secret=True) if n.secured else None
             if n.secured and psk is None:return
-            self.draw_busy(f"CONNECTING {n.ssid}");ok=network.connect(n.ssid,psk);self.status=network.status();self.toast("CONNECTED" if ok else "CONNECTION FAILED")
+            self.draw_busy(f"CONNECTING {n.ssid}");ok=network.connect(n.ssid,psk,security=n.security);self.status=network.status();self.toast("CONNECTED" if ok else "CONNECTION FAILED")
         elif act=="SAVED NETWORKS":
             ssid=self.pick("SAVED NETWORKS",network.saved())
             if not ssid:return

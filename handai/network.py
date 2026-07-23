@@ -13,6 +13,7 @@ $HANDAI_STATE/iface so the cockpit and the supplicant always agree.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import time
@@ -73,6 +74,7 @@ class Network:
     ssid: str
     signal: int  # dBm, higher (closer to 0) is stronger
     secured: bool
+    security: str = "open"  # open | wpa | sae | wep | enterprise
 
 
 def _wpa(*args: str, timeout: float = 8.0) -> tuple[int, str]:
@@ -139,14 +141,25 @@ def parse_scan_results(text: str) -> list[Network]:
         _bssid, _freq, signal, flags, ssid = parts[0], parts[1], parts[2], parts[3], parts[4]
         if not ssid:
             continue  # hidden SSID
-        secured = any(x in flags for x in ("WPA", "WEP", "RSN"))
+        if "EAP" in flags:
+            security = "enterprise"
+        elif "WEP" in flags:
+            security = "wep"
+        elif "SAE" in flags and "PSK" not in flags:
+            security = "sae"
+        elif any(x in flags for x in ("WPA", "RSN", "PSK")):
+            security = "wpa"
+        else:
+            security = "open"
+        secured = security != "open"
         try:
             sig = int(signal)
         except ValueError:
             sig = -100
         cur = nets.get(ssid)
         if cur is None or sig > cur.signal:  # keep strongest per SSID
-            nets[ssid] = Network(ssid=ssid, signal=sig, secured=secured)
+            nets[ssid] = Network(ssid=ssid, signal=sig, secured=secured,
+                                 security=security)
     return sorted(nets.values(), key=lambda n: n.signal, reverse=True)
 
 
@@ -183,7 +196,35 @@ def scan_error() -> str:
     return _last_scan_error
 
 
-def connect(ssid: str, psk: str | None, timeout_s: int = 20) -> bool:
+def _wpa_string(value: str) -> str:
+    """Encode one literal for wpa_supplicant's quoted-string grammar."""
+    return '"' + str(value).replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def _psk_value(value: str) -> str:
+    encoded = value.encode("utf-8")
+    if len(value) == 64 and re.fullmatch(r"[0-9A-Fa-f]{64}", value):
+        return value
+    if not 8 <= len(encoded) <= 63:
+        raise ValueError("WPA PASSPHRASE MUST BE 8-63 BYTES OR 64 HEX DIGITS")
+    return _wpa_string(value)
+
+
+def _wep_value(value: str) -> str:
+    if len(value) in (10, 26) and re.fullmatch(r"[0-9A-Fa-f]+", value):
+        return value
+    if len(value.encode("utf-8")) not in (5, 13):
+        raise ValueError("WEP KEY MUST BE 5/13 TEXT BYTES OR 10/26 HEX DIGITS")
+    return _wpa_string(value)
+
+
+def _set_network(net_id: str, field: str, value: str) -> bool:
+    rc, output = _wpa("set_network", net_id, field, value)
+    return rc == 0 and "FAIL" not in output
+
+
+def connect(ssid: str, psk: str | None, timeout_s: int = 20,
+            security: str | None = None) -> bool:
     """Add/enable a network and persist it. psk=None for open networks.
 
     Reuses an existing saved entry for the same SSID instead of stacking
@@ -191,23 +232,46 @@ def connect(ssid: str, psk: str | None, timeout_s: int = 20) -> bool:
     """
     if not available():
         return False
+    kind = security or ("wpa" if psk else "open")
+    if kind == "enterprise":
+        return False
     net_id = _find_saved(ssid)
+    created = net_id is None
     if net_id is None:
         rc, out = _wpa("add_network")
         tok = out.strip().split()[-1] if out.strip() else ""
         if rc != 0 or not tok.isdigit():
             return False
         net_id = tok
-    # ssid/psk must be quoted for wpa_cli; it treats bare tokens as hex.
-    _wpa("set_network", net_id, "ssid", f'"{ssid}"')
-    if psk:
-        _wpa("set_network", net_id, "psk", f'"{psk}"')
-    else:
-        _wpa("set_network", net_id, "key_mgmt", "NONE")
-    _wpa("select_network", net_id)  # enables this one, disables others for the attempt
-    _wpa("enable_network", net_id)
-    _wpa("save_config")
-    _wpa("reassociate")
+    try:
+        configured = _set_network(net_id, "ssid", _wpa_string(ssid))
+        if kind == "wep" and psk is not None:
+            configured = (configured and
+                          _set_network(net_id, "key_mgmt", "NONE") and
+                          _set_network(net_id, "wep_key0", _wep_value(psk)) and
+                          _set_network(net_id, "wep_tx_keyidx", "0"))
+        elif kind == "sae" and psk is not None:
+            configured = (configured and
+                          _set_network(net_id, "key_mgmt", "SAE") and
+                          _set_network(net_id, "sae_password", _wpa_string(psk)))
+        elif psk is not None:
+            configured = (configured and
+                          _set_network(net_id, "key_mgmt", "WPA-PSK") and
+                          _set_network(net_id, "psk", _psk_value(psk)))
+        else:
+            configured = configured and _set_network(net_id, "key_mgmt", "NONE")
+    except ValueError:
+        configured = False
+    if not configured:
+        if created:
+            _wpa("remove_network", net_id)
+        return False
+    # select_network enables this one and disables others for the attempt.
+    for action in (("select_network", net_id), ("enable_network", net_id),
+                   ("save_config",), ("reassociate",)):
+        rc, output = _wpa(*action)
+        if rc != 0 or "FAIL" in output:
+            return False
     # wait for association + DHCP
     for _ in range(timeout_s):
         if "wpa_state=COMPLETED" in status_raw():
