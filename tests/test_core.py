@@ -13,6 +13,7 @@ import tempfile
 import time
 import unittest
 import wave
+from collections import deque
 from pathlib import Path
 from unittest.mock import patch
 
@@ -29,7 +30,7 @@ from handai.router import _cd_expr, build_target, session_name
 from handai.secrets import SecretStore
 from handai import tmux
 from handai import phone, tailscale
-from handai.pixelgui import DEEPLAY_CONTROLLER_MAPPING, PixelCockpit, THEMES, load_theme, save_theme, provider_actions, provider_brand, _FONT
+from handai.pixelgui import DEEPLAY_CONTROLLER_MAPPING, EvdevInput, PixelCockpit, THEMES, load_theme, save_theme, provider_actions, provider_brand, _FONT
 
 
 def _claude():
@@ -444,6 +445,20 @@ class TestPreferences(unittest.TestCase):
             self.assertEqual(preferences.button_map(Path(d)/"missing.json"),
                              {0:"a", 1:"b", 2:"cancel", 4:"cancel", 6:"done",
                               11:"up", 12:"down", 13:"left", 14:"right"})
+
+    def test_rg35xxsp_evdev_codes(self):
+        reader = object.__new__(EvdevInput)
+        reader.button_map = {}
+        reader.raw_pending = deque()
+        self.assertEqual(reader._decode(1, 304, 1), "a")
+        self.assertEqual(reader._decode(1, 305, 1), "b")
+        self.assertEqual(reader._decode(1, 310, 1), "cancel")
+        self.assertEqual(reader._decode(1, 311, 1), "done")
+        self.assertEqual(reader._decode(3, 16, -1), "left")
+        self.assertEqual(reader._decode(3, 16, 1), "right")
+        self.assertEqual(reader._decode(3, 17, -1), "up")
+        self.assertEqual(reader._decode(3, 17, 1), "down")
+        self.assertIsNone(reader._decode(1, 304, 0))
 
     def test_first_run_and_button_map_persist(self):
         with tempfile.TemporaryDirectory() as d:

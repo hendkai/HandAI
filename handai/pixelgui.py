@@ -11,10 +11,14 @@ import ctypes.util
 import importlib.util
 import json
 import os
+import select
 import shlex
 import shutil
+import struct
 import subprocess
 import sys
+import time
+from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Sequence, TypeVar
@@ -40,6 +44,108 @@ DEEPLAY_CONTROLLER_MAPPING = (
     "dpup:h0.1,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,"
     "leftx:a0,lefty:a1,rightx:a2,righty:a3,platform:Linux,"
 )
+
+
+class EvdevInput:
+    """Direct fallback for the RG35XXSP's built-in Deeplay-keys device."""
+
+    _EVENT = struct.Struct("@llHHi")
+    _KEY_ACTIONS = {
+        304: "a",       # A
+        305: "b",       # B
+        310: "cancel",  # SELECT
+        311: "done",    # START
+        544: "up",      # BTN_DPAD_UP (alternate kernels)
+        545: "down",
+        546: "left",
+        547: "right",
+    }
+
+    def __init__(self, button_map: dict[int, str]):
+        self.button_map = button_map
+        self.fd: int | None = None
+        self.path: Path | None = None
+        self.pending: deque[str] = deque()
+        self.raw_pending: deque[int] = deque()
+        self._open()
+
+    @staticmethod
+    def _device_paths() -> list[tuple[Path, str]]:
+        found: list[tuple[Path, str]] = []
+        for entry in sorted(Path("/sys/class/input").glob("event*")):
+            try:
+                name = (entry / "device/name").read_text("utf-8").strip()
+            except OSError:
+                continue
+            found.append((Path("/dev/input") / entry.name, name))
+        return found
+
+    def _open(self) -> None:
+        devices = self._device_paths()
+        selected = next(((path, name) for path, name in devices
+                         if "deeplay" in name.casefold()), None)
+        if not selected:
+            names = ", ".join(f"{path.name}:{name}" for path, name in devices) or "none"
+            print(f"input: evdev Deeplay-keys not found; devices={names}", file=sys.stderr)
+            return
+        self.path, name = selected
+        try:
+            self.fd = os.open(self.path, os.O_RDONLY | os.O_NONBLOCK)
+        except OSError as exc:
+            print(f"input: evdev open failed path={self.path}: {exc}", file=sys.stderr)
+            self.fd = None
+            return
+        print(f"input: evdev opened path={self.path} name={name!r}", file=sys.stderr)
+
+    def close(self) -> None:
+        if self.fd is not None:
+            os.close(self.fd)
+            self.fd = None
+
+    def _decode(self, event_type: int, code: int, value: int) -> str | None:
+        if event_type == 1 and value == 1:  # EV_KEY, initial press only
+            self.raw_pending.append(code)
+            return self.button_map.get(code) or self._KEY_ACTIONS.get(code)
+        if event_type == 3:  # EV_ABS
+            if code == 16 and value:  # ABS_HAT0X
+                return "left" if value < 0 else "right"
+            if code == 17 and value:  # ABS_HAT0Y
+                return "up" if value < 0 else "down"
+        return None
+
+    def _read_ready(self) -> None:
+        if self.fd is None:
+            return
+        try:
+            payload = os.read(self.fd, self._EVENT.size * 32)
+        except BlockingIOError:
+            return
+        except OSError as exc:
+            print(f"input: evdev read failed path={self.path}: {exc}", file=sys.stderr)
+            self.close()
+            return
+        for offset in range(0, len(payload) - self._EVENT.size + 1, self._EVENT.size):
+            _, _, event_type, code, value = self._EVENT.unpack_from(payload, offset)
+            action = self._decode(event_type, code, value)
+            if action:
+                self.pending.append(action)
+
+    def poll(self, timeout: float = 0.0) -> str | None:
+        if self.pending:
+            return self.pending.popleft()
+        if self.fd is None:
+            return None
+        readable, _, _ = select.select([self.fd], [], [], max(0.0, timeout))
+        if readable:
+            self._read_ready()
+        return self.pending.popleft() if self.pending else None
+
+    def raw_button(self) -> int | None:
+        while self.fd is not None:
+            self.poll(0.1)
+            if self.raw_pending:
+                return self.raw_pending.popleft()
+        return None
 
 
 @dataclass(frozen=True)
@@ -185,7 +291,7 @@ class SDL:
         name=name or "libSDL2-2.0.so.0"
         try: self.s=ctypes.CDLL(name)
         except OSError as e: raise RuntimeError(f"SDL2 unavailable: {e}") from e
-        self._bind(); self.window=None; self.renderer=None; self.pad=None
+        self._bind(); self.window=None; self.renderer=None; self.pad=None; self.evdev=None
         self.button_map=preferences.button_map()
         self.apply_theme(load_theme()); self.open()
 
@@ -238,8 +344,11 @@ class SDL:
                 self.pad=self.s.SDL_GameControllerOpen(i)
         if not self.pad:
             print("input: no SDL GameController opened",file=sys.stderr)
+        if os.name == "posix":
+            self.evdev=EvdevInput(self.button_map)
 
     def close(self):
+        if self.evdev: self.evdev.close(); self.evdev=None
         if self.pad: self.s.SDL_GameControllerClose(self.pad); self.pad=None
         if self.renderer: self.s.SDL_DestroyRenderer(self.renderer); self.renderer=None
         if self.window: self.s.SDL_DestroyWindow(self.window); self.window=None
@@ -275,19 +384,32 @@ class SDL:
 
     def event(self):
         buf=(ctypes.c_uint8*64)()
-        while self.s.SDL_WaitEvent(ctypes.byref(buf)):
-            return self._decode_event(buf)
-        return "quit"
+        while True:
+            if self.s.SDL_WaitEventTimeout(ctypes.byref(buf),50):
+                action=self._decode_event(buf)
+                if action!="none":return action
+            if self.evdev:
+                action=self.evdev.poll()
+                if action:return action
 
     def event_timeout(self,milliseconds=250):
         """Wait briefly so background login/status screens can keep repainting."""
         buf=(ctypes.c_uint8*64)()
-        if self.s.SDL_WaitEventTimeout(ctypes.byref(buf),milliseconds):
-            return self._decode_event(buf)
-        return "timeout"
+        deadline=time.monotonic()+milliseconds/1000
+        while True:
+            remaining=deadline-time.monotonic()
+            if remaining<=0:return "timeout"
+            if self.s.SDL_WaitEventTimeout(ctypes.byref(buf),min(50,max(1,int(remaining*1000)))):
+                action=self._decode_event(buf)
+                if action!="none":return action
+            if self.evdev:
+                action=self.evdev.poll()
+                if action:return action
 
     def raw_button(self)->int|None:
         """Wait for one controller button; Escape cancels calibration."""
+        if self.evdev and self.evdev.fd is not None:
+            return self.evdev.raw_button()
         buf=(ctypes.c_uint8*64)()
         while self.s.SDL_WaitEvent(ctypes.byref(buf)):
             typ=int.from_bytes(bytes(buf[0:4]),"little")
