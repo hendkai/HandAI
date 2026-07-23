@@ -45,6 +45,7 @@ mkdir -p "$WORK/vendor-root"
 "$UNSQUASHFS" -f -d "$WORK/vendor-root" "$WORK/vendor.squashfs" \
 	lib/modules \
 	lib/firmware \
+	'lib/libudev.so.1*' \
 	'usr/lib/libSDL2-2.0.so.0*' \
 	'usr/lib/libmali.so*' \
 	'usr/lib/libEGL.so*' \
@@ -61,6 +62,10 @@ if [ -d "$WORK/vendor-root/lib/firmware" ]; then
 	mkdir -p "$WORK/rootfs/lib"
 	cp -a "$WORK/vendor-root/lib/firmware" "$WORK/rootfs/lib/firmware"
 fi
+for library in "$WORK/vendor-root/lib"/libudev.so.1*; do
+	[ -e "$library" ] || [ -L "$library" ] || continue
+	cp -a "$library" "$WORK/rootfs/lib/"
+done
 mkdir -p "$WORK/rootfs/usr/lib"
 for pattern in \
 	'libSDL2-2.0.so.0*' \

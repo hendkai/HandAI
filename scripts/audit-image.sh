@@ -65,6 +65,8 @@ for path in \
 	usr/bin/tmux \
 	usr/bin/tailscale \
 	usr/sbin/tailscaled \
+	lib/libudev.so.1 \
+	lib/libudev.so.1.6.3 \
 	usr/bin/qrencode \
 	usr/bin/arecord \
 	usr/bin/amixer \

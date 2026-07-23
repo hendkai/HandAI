@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import mmap
 import struct
+import sys
 
 from .pixelgui import _FONT
 
