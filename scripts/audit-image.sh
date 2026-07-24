@@ -78,10 +78,10 @@ for path in \
 	usr/bin/npm \
 	usr/bin/git \
 	usr/bin/xz \
-	usr/sbin/sfdisk \
-	usr/bin/partx \
+	sbin/sfdisk \
+	usr/sbin/partx \
 	usr/bin/flock \
-	usr/sbin/resize2fs \
+	sbin/resize2fs \
 	usr/bin/curl \
 	bin/bash \
 	usr/bin/tailscale \
