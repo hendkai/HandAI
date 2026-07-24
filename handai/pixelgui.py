@@ -33,6 +33,12 @@ from .secrets import SecretStore
 T = TypeVar("T")
 OSK_CHARS = string.ascii_uppercase + string.ascii_lowercase + string.digits + " " + string.punctuation
 
+
+def osk_tokens(uppercase:bool=False)->list[str]:
+    """One compact keyboard page plus an explicit case-toggle action."""
+    letters=string.ascii_uppercase if uppercase else string.ascii_lowercase
+    return list(letters+string.digits+" "+string.punctuation)+["CASE"]
+
 # The H700 kernel exposes the built-in RG35XXSP controls as a generic
 # "Deeplay-keys" joystick.  SDL does not classify it as a GameController
 # without a mapping, so controller button events would otherwise never reach
@@ -568,25 +574,27 @@ class PixelCockpit:
         return out or [""]
 
     def prompt(self,title:str,initial="",secret=False)->str|None:
-        chars=list(OSK_CHARS)
-        cols=16; value=initial; pos=0
+        cols=16; value=initial; pos=0; uppercase=False
         while True:
-            self.chrome(title,"ON-SCREEN KEYBOARD")
+            chars=osk_tokens(uppercase)
+            self.chrome(title,f"ON-SCREEN KEYBOARD - CASE: {'UPPER' if uppercase else 'LOWER'} - SELECT CASE TO SWITCH")
             shown="*"*len(value) if secret else value
             self.ui.rect(20,86,600,42,self.ui.PANEL2); self.ui.text(34,100,shown[-47:],self.ui.YELLOW,2,max_chars=47)
             for i,ch in enumerate(chars):
                 x=20+(i%cols)*38; y=145+(i//cols)*41
                 self.ui.rect(x,y,32,34,self.ui.CYAN if i==pos else self.ui.PANEL)
-                label="SP" if ch==" " else ch
-                scale=1 if ch==" " else 2
-                self.ui.text(x+(9 if ch==" " else 10),y+10,label,
+                label="SP" if ch==" " else "Aa" if ch=="CASE" else ch
+                scale=1 if ch in (" ","CASE") else 2
+                self.ui.text(x+(9 if ch in (" ","CASE") else 10),y+10,label,
                              self.ui.BG if i==pos else self.ui.INK,scale)
             self.footer("D-PAD MOVE  A TYPE  B DELETE  START/ENTER DONE  ESC CANCEL"); self.ui.present(); e=self.ui.event()
             if e=="left": pos=(pos-1)%len(chars)
             elif e=="right": pos=(pos+1)%len(chars)
             elif e=="up": pos=(pos-cols)%len(chars)
             elif e=="down": pos=(pos+cols)%len(chars)
-            elif e=="a": value+=chars[pos]
+            elif e=="a":
+                if chars[pos]=="CASE":uppercase=not uppercase;pos=0
+                else:value+=chars[pos]
             elif e=="b":
                 if value: value=value[:-1]
                 else: return None
@@ -908,7 +916,7 @@ class PixelCockpit:
                     "802.1X USER/CERTIFICATE SETUP IS NOT SAFE TO GUESS.",
                     "ADD IT TO WPA_SUPPLICANT.CONF, THEN USE SAVED NETWORKS.",
                 ]);return
-            psk=self.prompt(f"PASSWORD / {n.ssid}",secret=True) if n.secured else None
+            psk=self.prompt(f"WIFI PASSWORD / {n.ssid}",secret=True) if n.secured else None
             if n.secured and psk is None:return
             self.draw_busy(f"CONNECTING {n.ssid}");ok=network.connect(n.ssid,psk,security=n.security);self.status=network.status();self.toast("CONNECTED" if ok else "CONNECTION FAILED")
         elif act=="SAVED NETWORKS":

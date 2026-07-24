@@ -33,7 +33,7 @@ from handai.router import _cd_expr, build_target, session_name
 from handai.secrets import SecretStore
 from handai import remote, tmux
 from handai import phone, tailscale
-from handai.pixelgui import DEEPLAY_CONTROLLER_MAPPING, EvdevInput, OSK_CHARS, PixelCockpit, THEMES, load_theme, save_theme, provider_actions, provider_brand, openclaw_gateway_health_argv, publish_gui_ready, _FONT
+from handai.pixelgui import DEEPLAY_CONTROLLER_MAPPING, EvdevInput, OSK_CHARS, PixelCockpit, THEMES, load_theme, save_theme, provider_actions, provider_brand, openclaw_gateway_health_argv, osk_tokens, publish_gui_ready, _FONT
 
 
 def _claude():
@@ -196,6 +196,10 @@ class TestPixelGuiPure(unittest.TestCase):
     def test_osk_can_enter_all_printable_ascii_credentials(self):
         self.assertEqual(set(OSK_CHARS),set(string.ascii_letters+string.digits+" "+string.punctuation))
         self.assertTrue(all(char.upper() in _FONT for char in OSK_CHARS))
+        lower=osk_tokens(False);upper=osk_tokens(True)
+        self.assertIn("CASE",lower);self.assertIn("CASE",upper)
+        self.assertEqual(set(lower)-{"CASE"},set(string.ascii_lowercase+string.digits+" "+string.punctuation))
+        self.assertEqual(set(upper)-{"CASE"},set(string.ascii_uppercase+string.digits+" "+string.punctuation))
 
     def test_ten_unique_themes(self):
         self.assertEqual(len(THEMES), 10)
@@ -757,6 +761,7 @@ class TestWifiScanParse(unittest.TestCase):
     def test_wifi_credentials_are_encoded_for_wpa_supplicant(self):
         self.assertEqual(_wpa_string('a"b\\c'),'"a\\"b\\\\c"')
         self.assertEqual(_psk_value("a-password!"),'"a-password!"')
+        self.assertEqual(_psk_value("CaseSensitive9"),'"CaseSensitive9"')
         raw="0123456789abcdef"*4
         self.assertEqual(_psk_value(raw),raw)
         self.assertEqual(_wep_value("abcde"),'"abcde"')

@@ -40,7 +40,7 @@ def prompt(stdscr, title: str, initial: str = "", secret: bool = False) -> str |
     while True:
         stdscr.erase()
         h, w = stdscr.getmaxyx()
-        stdscr.addnstr(0, 0, title, w - 1, curses.A_BOLD)
+        stdscr.addnstr(0, 0, title + " (case-sensitive)", w - 1, curses.A_BOLD)
         shown = ("*" * len(buf)) if secret else "".join(buf)
         stdscr.addnstr(2, 0, "> " + shown + "_", w - 1)
 
@@ -56,7 +56,7 @@ def prompt(stdscr, title: str, initial: str = "", secret: bool = False) -> str |
             stdscr.addstr(arow, x, f"[{a}]", attr)
             x += len(a) + 4
 
-        stdscr.addnstr(h - 1, 0, "d-pad move - A select - B backspace - Start OK", w - 1, curses.A_DIM)
+        stdscr.addnstr(h - 1, 0, "lower + UPPER rows - d-pad - A select - B delete - Start OK", w - 1, curses.A_DIM)
         stdscr.refresh()
 
         k = stdscr.getch()
