@@ -336,11 +336,9 @@ class TestNativeOAuth(unittest.TestCase):
         local=provider_actions(Provider("local","Local",["local"]),[LOCAL])
         self.assertNotIn("REMOTE TARGETS",local);self.assertNotIn("PROVIDER SKILLS",local)
 
-    def test_openclaw_health_uses_explicit_remote_credentials(self):
-        argv=openclaw_gateway_health_argv("wss://claw.example","remote-login-token")
-        self.assertEqual(argv,["openclaw","gateway","health","--url",
-                               "wss://claw.example","--json","--token",
-                               "remote-login-token"])
+    def test_openclaw_health_keeps_remote_credentials_out_of_argv(self):
+        argv=openclaw_gateway_health_argv()
+        self.assertEqual(argv,["openclaw","gateway","health","--json"])
 
     def test_provider_gateway_connection_test_is_live(self):
         cockpit=object.__new__(PixelCockpit)
@@ -464,11 +462,11 @@ class TestRouter(unittest.TestCase):
     def test_openclaw_gateway_runs_local_client_in_tmux(self):
         provider=Provider("openclaw","OpenClaw",["openclaw","tui"],allowed_modes=["local","devbox"])
         mode=Mode("managed-home","Home Claw","openclaw-gateway",endpoint="wss://claw.example")
-        target=build_target(provider,mode,"~",["--token","secret"])
+        target=build_target(provider,mode,"~")
         self.assertEqual(target.argv[0],"tmux")
         self.assertIn("wss://claw.example",target.display)
-        self.assertIn("--url",target.detached_argv[-1])
-        self.assertIn("--token",target.detached_argv[-1])
+        self.assertNotIn("--url",target.detached_argv[-1])
+        self.assertNotIn("--token",target.detached_argv[-1])
 
     def test_managed_ssh_is_allowed_for_remote_capable_provider(self):
         provider=Provider("claude","Claude",["claude"],allowed_modes=["local","devbox"])

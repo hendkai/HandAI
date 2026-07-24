@@ -164,6 +164,11 @@ grep -q 'def pair_with_password' "$TMP/rootfs/opt/handai/handai/remote.py" || {
 	echo "keyboard-free SSH pairing is missing" >&2
 	exit 1
 }
+grep -q 'OPENCLAW_GATEWAY_URL OPENCLAW_GATEWAY_TOKEN' \
+	"$TMP/rootfs/etc/handai/tmux.conf" || {
+	echo "secret-free OpenClaw gateway tmux environment is missing" >&2
+	exit 1
+}
 grep -q '"command": \["codex", "cloud"\]' \
 	"$TMP/rootfs/etc/handai/handai.json" || {
 	echo "current Codex Cloud command is missing" >&2

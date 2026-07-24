@@ -106,9 +106,7 @@ def build_target(
     name = session_name(provider, mode, workdir)
     # remote + token-env -> source the provisioned env file inside the session
     source_env = mode.is_ssh and provider.supports_auth("token-env")
-    if mode.transport=="openclaw-gateway":
-        extra_args=["--url",mode.endpoint or "",*extra_args]
-    elif mode.transport=="hermes-api":
+    if mode.transport=="hermes-api":
         extra_args=["__handai_hermes_remote__","--url",mode.endpoint or ""]
     inner = _tmux_inner(provider, workdir, extra_args, source_env)
 

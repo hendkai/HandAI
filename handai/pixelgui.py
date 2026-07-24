@@ -212,10 +212,9 @@ def provider_actions(provider:Provider,modes:Sequence[Mode]) -> list[str]:
     return actions
 
 
-def openclaw_gateway_health_argv(address:str,token:str|None=None)->list[str]:
-    argv=["openclaw","gateway","health","--url",address,"--json"]
-    if token:argv.extend(["--token",token])
-    return argv
+def openclaw_gateway_health_argv()->list[str]:
+    """Use OPENCLAW_GATEWAY_URL/TOKEN so the login token never appears in ps."""
+    return ["openclaw","gateway","health","--json"]
 
 
 THEMES = (
@@ -694,10 +693,12 @@ class PixelCockpit:
             os.environ["OPENCLAW_GATEWAY_URL"]=m.endpoint or ""
             gateway_token=self.secrets.get("gateway:"+m.id)
             if gateway_token:os.environ["OPENCLAW_GATEWAY_TOKEN"]=gateway_token
+            else:os.environ.pop("OPENCLAW_GATEWAY_TOKEN",None)
         elif m.transport=="hermes-api":
             os.environ["HERMES_REMOTE_URL"]=m.endpoint or ""
             remote_key=self.secrets.get("gateway:"+m.id)
             if remote_key:os.environ["HERMES_REMOTE_TOKEN"]=remote_key
+            else:os.environ.pop("HERMES_REMOTE_TOKEN",None)
         choices=list(self.cfg.recent_workdirs)
         if m.default_workdir and m.default_workdir not in choices: choices.insert(0,m.default_workdir)
         choices.append("<ENTER PATH>"); wd=self.pick("NEW / WORKDIR",choices)
@@ -707,11 +708,7 @@ class PixelCockpit:
         if needs_local_cli and not shutil.which(p.command[0]):
             self.toast(f"{p.label.upper()} CLI IS NOT INSTALLED",["USE INSTALL LOCAL AGENTS AFTER WIFI IS CONNECTED.","REMOTE PROVIDERS CAN RUN ON YOUR COMPUTER."])
             return
-        extra_args=[]
-        if m.transport=="openclaw-gateway":
-            gateway_token=self.secrets.get("gateway:"+m.id)
-            if gateway_token:extra_args=["--token",gateway_token]
-        try: self.env(p); target=build_target(p,m,wd,extra_args)
+        try: self.env(p); target=build_target(p,m,wd)
         except ValueError as e:self.toast(str(e));return
         self.session_console(target)
 
@@ -1455,7 +1452,9 @@ class PixelCockpit:
         token=self.secrets.get("gateway:managed-"+item.id)
         env=os.environ.copy()
         if item.kind=="openclaw-gateway":
-            argv=openclaw_gateway_health_argv(item.address,token)
+            argv=openclaw_gateway_health_argv()
+            env["OPENCLAW_GATEWAY_URL"]=item.address
+            if token:env["OPENCLAW_GATEWAY_TOKEN"]=token
         else:
             argv=[os.environ.get("PYTHON","python"),"-c",
                   "import os;from handai.hermes_remote import HermesRemote;print(HermesRemote(os.environ['HERMES_REMOTE_URL'],os.environ['HERMES_REMOTE_TOKEN']).request('/v1/capabilities'))"]
