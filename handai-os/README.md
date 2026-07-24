@@ -46,8 +46,10 @@ directory):
 bash scripts/audit-image.sh output/images/sdcard.img
 ```
 
-The audit checks the pinned four-partition GPT layout, extracts the embedded
-SquashFS, verifies HandAI plus its launcher, HTTPS certificates, SSH, tmux,
+The audit first requires the complete pre-kernel cold-boot region to match the
+verified vendor template byte for byte. It then checks the pinned four-partition
+GPT layout, extracts the embedded SquashFS, verifies HandAI plus its launcher,
+HTTPS certificates, SSH, tmux,
 Tailscale, QR tooling, ALSA/PipeWire/BlueZ voice capture, whisper.cpp and matching
 vendor kernel modules, a current OpenClaw-compatible Node runtime and first-boot
 storage expansion tooling, then validates the
@@ -64,8 +66,11 @@ also appended to `handai-debug.log` on the Windows-readable boot partition.
 `anbernic_rg35xx_h700_defconfig` as a HandAI-branded eGON SPL/U-Boot, together
 with Trusted Firmware-A for `sun50i_h616`. When passed an audited stable image,
 it copies that image, installs the open bootloader at the RG35XXSP's proven
-256 KiB offset, adds `boot.scr`, and emits an explicitly named experimental
-image. It never modifies the stable source image.
+256 KiB offset, adds `boot.scr`, and emits an explicitly named
+`UNTESTED-DO-NOT-FLASH` image. It never modifies the stable source image. This
+artifact is only for an intentional serial/UART cold-boot test and must not be
+used as a normal update. Auditing it requires the explicit
+`--allow-experimental-bootloader` switch.
 
 ## Variants
 - **Remote** (recommended build-script default): no Node/local agent CLIs; the

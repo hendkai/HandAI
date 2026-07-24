@@ -2,10 +2,20 @@
 # Verify the structure and userland of a generated RG35XXSP image without booting it.
 set -euo pipefail
 
+ALLOW_EXPERIMENTAL_BOOTLOADER=0
+if [ "${1:-}" = "--allow-experimental-bootloader" ]; then
+	ALLOW_EXPERIMENTAL_BOOTLOADER=1
+	shift
+fi
 IMAGE="${1:-}"
-[ -f "$IMAGE" ] || { echo "usage: $0 path/to/sdcard.img" >&2; exit 2; }
+[ -f "$IMAGE" ] || {
+	echo "usage: $0 [--allow-experimental-bootloader] path/to/sdcard.img" >&2
+	exit 2
+}
 IMAGE="$(realpath "$IMAGE")"
 IMAGE_DIR="$(dirname "$IMAGE")"
+REPO="$(cd "$(dirname "$0")/.." && pwd)"
+TEMPLATE="${HANDAI_FIRMWARE_TEMPLATE:-$REPO/handai-os/board/rg35xxsp/blobs/knulli-rg35xxsp.img}"
 HOST_BIN="${HOST_BIN:-$(realpath "$IMAGE_DIR/../host/bin" 2>/dev/null || true)}"
 MCOPY="${MCOPY:-$HOST_BIN/mcopy}"
 UNSQUASHFS="${UNSQUASHFS:-$HOST_BIN/unsquashfs}"
@@ -21,10 +31,27 @@ done
 command -v blkid >/dev/null || { echo "missing tool: blkid" >&2; exit 2; }
 
 # These offsets are part of the pinned KNULLI RG35XXSP GPT layout.
+BOOT_IMAGE_OFFSET=$((73728 * 512))
 BOOT_RESOURCE_OFFSET=$((147456 * 512))
 DATA_OFFSET=$((10633216 * 512))
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
+
+if [ "$ALLOW_EXPERIMENTAL_BOOTLOADER" -eq 0 ]; then
+	[ -f "$TEMPLATE" ] || {
+		echo "missing verified boot template: $TEMPLATE" >&2
+		exit 2
+	}
+	echo ">> checking cold-boot region against the proven vendor template"
+	cmp -n "$BOOT_IMAGE_OFFSET" "$TEMPLATE" "$IMAGE" >/dev/null || {
+		echo "REFUSING RELEASE: bootloader/GPT region differs from the proven RG35XXSP template" >&2
+		echo "This image may leave the power LED orange and fail before Linux starts." >&2
+		echo "Use --allow-experimental-bootloader only for an intentional UART bootloader test." >&2
+		exit 1
+	}
+else
+	echo ">> WARNING: allowing an unverified experimental bootloader"
+fi
 
 echo ">> checking GPT layout"
 PARTITIONS="$(sfdisk -d "$IMAGE")"

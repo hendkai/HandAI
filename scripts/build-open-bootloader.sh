@@ -13,7 +13,7 @@ TOOLCHAIN_DIR="${TOOLCHAIN_DIR:-$HOME/handai-build-2026/buildroot/output/host/bi
 CROSS_COMPILE="${CROSS_COMPILE:-$TOOLCHAIN_DIR/aarch64-buildroot-linux-gnu-}"
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 SOURCE_IMAGE="${1:-}"
-OUTPUT_IMAGE="${2:-$REPO/dist/HandAI-OS-RG35XXSP-upstream-uboot-experimental.img}"
+OUTPUT_IMAGE="${2:-$REPO/dist/UNTESTED-DO-NOT-FLASH-HandAI-RG35XXSP-upstream-uboot.img}"
 UBOOT="$BUILD_DIR/u-boot"
 ATF="$BUILD_DIR/trusted-firmware-a"
 OUT="$BUILD_DIR/output"
@@ -103,5 +103,7 @@ BOOT_RESOURCE_OFFSET=$((147456 * 512))
 "$MCOPY" -o -i "$OUTPUT_IMAGE@@$BOOT_RESOURCE_OFFSET" \
 	"$OUT/boot.scr" ::boot.scr
 
-echo ">> EXPERIMENTAL IMAGE READY: $OUTPUT_IMAGE"
-echo ">> keep a serial/UART log for the first hardware boot"
+echo
+echo ">> UNTESTED BOOTLOADER IMAGE: $OUTPUT_IMAGE"
+echo ">> DO NOT use this as a normal HandAI update."
+echo ">> It is only for an intentional serial/UART cold-boot test."

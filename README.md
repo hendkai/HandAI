@@ -138,8 +138,9 @@ python -m handai --ui pixel
   persistente Datenpartition neu; das große Firmware-Template wird nie committed.
 - ✅ **Eigener offener Bootloader als Testziel**: HandAI baut ein eigenes,
   gebrandetes mainline SPL/U-Boot 2025.10 samt Trusted Firmware-A und Bootskript.
-  Das Ergebnis liegt bewusst in einem separaten `upstream-uboot-experimental`
-  Image, bis der Kaltstart auf echter RG35XXSP-Hardware bestätigt ist.
+  Das Ergebnis liegt bewusst als `UNTESTED-DO-NOT-FLASH` getrennt vom stabilen
+  Image. Es ist bis zu einem erfolgreichen UART-Kaltstarttest kein normales
+  Update und darf nicht versehentlich auf die produktive SD-Karte gelangen.
 - ✅ **Nachvollziehbarer Bootfortschritt**: Ein segmentierter Pixelbalken zeigt
   die real erreichten Phasen Bootloader, Kernel, Dateisystem, Treiber, Netzwerk
   und GUI. Bei einem Fehler bleibt die betroffene Phase auf dem Display stehen.
