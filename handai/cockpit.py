@@ -15,7 +15,7 @@ import subprocess
 from pathlib import Path
 from typing import Callable
 
-from . import network, remote, skills, tmux
+from . import network, power, remote, skills, tmux
 from .config import Config, config_path
 from .osk import prompt
 from .providers import Mode, Provider
@@ -415,6 +415,7 @@ class Cockpit:
         lines = [
             f"config : {config_path()}",
             f"state  : {self.secrets.path}",
+            f"power  : {power.battery_label().lower()}",
             f"wifi   : {network.status()}",
             f"providers: {len(self.cfg.providers)}   modes: {len(self.cfg.modes)}",
             "",

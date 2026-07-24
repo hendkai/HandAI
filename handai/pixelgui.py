@@ -454,8 +454,23 @@ class PixelCockpit:
         # Tiny pixel bot logo.
         u.rect(20,14,30,30,u.CYAN); u.rect(25,19,20,16,u.BG); u.rect(29,23,4,4,u.YELLOW); u.rect(38,23,4,4,u.YELLOW)
         u.text(64,12,"HANDAI",u.INK,3); u.text(64,38,"PIXEL COCKPIT",u.CYAN,1)
+        self.draw_battery()
         short=title[:24]; u.text(max(322,620-len(short)*12),20,short,u.YELLOW,2)
         if subtitle: u.text(22,72,subtitle,u.MUTED,1,max_chars=96)
+
+    def draw_battery(self,x:int=236,y:int=18):
+        u=self.ui;state=power.battery_state()
+        percent=state.percent
+        color=(u.MUTED if percent is None else
+               u.GREEN if state.charging else
+               u.PINK if percent <= 15 else u.YELLOW)
+        u.frame(x,y,30,18,color,2);u.rect(x+30,y+5,4,8,color)
+        if percent is not None:
+            fill=round(24*percent/100)
+            if fill:u.rect(x+3,y+3,fill,12,color)
+        prefix="+" if state.status.casefold()=="charging" else "=" if state.status.casefold()=="full" else ""
+        label=f"{prefix}{percent}%" if percent is not None else "--%"
+        u.text(x+38,y+4,label,color,1,max_chars=8)
 
     def draw_provider_mark(self,brand:ProviderBrand,x:int,y:int,size:int=92):
         """Draw a chunky original pixel interpretation of the provider identity."""
@@ -493,6 +508,7 @@ class PixelCockpit:
             u=self.ui;u.clear();u.rect(0,0,640,480,brand.deep)
             # oversize pixel bands make the entire screen feel provider-owned.
             for i in range(0,640,32):u.rect(i,0,16,7,brand.accent)
+            self.draw_battery(548,16)
             self.draw_provider_mark(brand,34,42,126)
             word=brand.wordmark[:15];scale=5 if len(word)<=9 else 4
             u.text(188,60,word,brand.accent,scale,max_chars=15)
@@ -1302,7 +1318,8 @@ class PixelCockpit:
         elif act=="RUN SETUP WIZARD": self.first_run(force=True)
         elif act=="CHOOSE PIXEL SKIN": self.choose_skin()
         elif act=="SYSTEM STATUS":
-            self.toast("SYSTEM STATUS",[f"CONFIG: {config_path()}",f"STATE: {self.secrets.path}",network.status(),f"PROVIDERS: {len(self.cfg.providers)}  MODES: {len(self.cfg.modes)}",f"SKIN: {self.ui.theme.label}","GUI: SDL2 PIXEL / 640X480"])
+            battery=power.battery_state()
+            self.toast("SYSTEM STATUS",[power.battery_label(battery),f"POWER SENSOR: {battery.source or 'NOT FOUND'}",f"CONFIG: {config_path()}",f"STATE: {self.secrets.path}",network.status(),f"PROVIDERS: {len(self.cfg.providers)}  MODES: {len(self.cfg.modes)}",f"SKIN: {self.ui.theme.label}","GUI: SDL2 PIXEL / 640X480"])
 
     def system_power(self):
         caps=power.capabilities();labels=[]

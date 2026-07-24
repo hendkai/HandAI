@@ -1177,6 +1177,31 @@ class TestHardwareReport(unittest.TestCase):
 
 
 class TestPower(unittest.TestCase):
+    def test_battery_state_detects_named_kernel_supply(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d)
+            ac=root/"ac";ac.mkdir();(ac/"type").write_text("Mains\n")
+            bat=root/"axp2202-battery";bat.mkdir()
+            (bat/"type").write_text("Battery\n")
+            (bat/"capacity").write_text("83\n")
+            (bat/"status").write_text("Charging\n")
+            state=power.battery_state(root)
+            self.assertEqual(state,power.BatteryState(83,"Charging","axp2202-battery"))
+            self.assertTrue(state.charging)
+            self.assertEqual(power.battery_label(state),"BATTERY: 83% CHARGING")
+
+    def test_battery_state_clamps_and_handles_missing_sensor(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d)
+            bat=root/"battery";bat.mkdir()
+            (bat/"capacity").write_text("105.2\n")
+            (bat/"status").write_text("Full\n")
+            self.assertEqual(power.battery_state(root).percent,100)
+        self.assertEqual(
+            power.battery_label(power.BatteryState(None,"Unavailable")),
+            "BATTERY: UNKNOWN",
+        )
+
     def test_capabilities_parse_suspend_state(self):
         with tempfile.TemporaryDirectory() as d:
             state = Path(d) / "state"; state.write_text("freeze mem disk\n")
