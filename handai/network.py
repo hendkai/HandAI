@@ -134,7 +134,10 @@ def parse_scan_results(text: str) -> list[Network]:
     tab-separated: bssid / frequency / signal(dBm) / flags / ssid.
     """
     nets: dict[str, Network] = {}
-    for line in text.splitlines()[1:]:  # skip header row
+    # Parse every line instead of blindly dropping the first one. Depending on
+    # the wpa_cli build, informational text such as "Selected interface ..." can
+    # precede the header (or the header can be omitted entirely).
+    for line in text.splitlines():
         parts = line.split("\t")
         if len(parts) < 5:
             continue
@@ -163,32 +166,93 @@ def parse_scan_results(text: str) -> list[Network]:
     return sorted(nets.values(), key=lambda n: n.signal, reverse=True)
 
 
+def _diag_output(argv: list[str]) -> str:
+    try:
+        result = subprocess.run(
+            argv, capture_output=True, text=True, timeout=4.0
+        )
+        return (result.stdout + result.stderr).strip()
+    except (OSError, subprocess.TimeoutExpired):
+        return "unavailable"
+
+
+def _record_scan_failure(detail: str, scan_output: str = "") -> None:
+    """Persist credential-free radio evidence for the next SD-card diagnosis."""
+    state = Path(os.environ.get("HANDAI_STATE") or
+                 os.path.expanduser("~/.local/state/handai"))
+    iface = _iface()
+    try:
+        state.mkdir(parents=True, exist_ok=True)
+        report = [
+            f"ERROR: {detail}",
+            f"INTERFACE: {iface}",
+            "--- WPA STATUS ---",
+            _diag_output(["wpa_cli", "-i", iface, "status"]),
+            "--- WPA SCAN RESULTS ---",
+            scan_output.strip() or "(empty)",
+            "--- RFKILL ---",
+            _diag_output(["rfkill", "list"]),
+            "--- IW DEV ---",
+            _diag_output(["iw", "dev"]),
+            "--- IP LINK ---",
+            _diag_output(["ip", "-details", "link", "show", "dev", iface]),
+            "--- KERNEL WIFI TAIL ---",
+            _diag_output(["dmesg"]),
+        ]
+        # Keep the useful tail of dmesg and bound the persistent report.
+        report[-1] = "\n".join(report[-1].splitlines()[-120:])
+        (state / "wifi-scan-latest.log").write_text(
+            "\n".join(report)[-65536:] + "\n", "utf-8"
+        )
+    except OSError:
+        pass
+    boot_log = Path("/usr/sbin/handai-boot-log")
+    if boot_log.is_file():
+        try:
+            subprocess.run(
+                [str(boot_log), "WIFI_ERROR", detail],
+                capture_output=True, text=True, timeout=20.0,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+
+
 def scan() -> list[Network]:
     global _last_scan_error
     _last_scan_error = ""
     if not available():
         _last_scan_error = "WPA_CLI IS NOT INSTALLED"
+        _record_scan_failure(_last_scan_error)
         return []
     ready, detail = _ensure_control()
     if not ready:
         _last_scan_error = detail
+        _record_scan_failure(_last_scan_error)
         return []
     iface = detail
     rc, response = _wpa("scan")
     busy = "FAIL-BUSY" in response
     if (rc != 0 or "FAIL" in response) and not busy:
         _last_scan_error = f"WIFI SCAN COULD NOT START ON {iface}"
+        _record_scan_failure(_last_scan_error, response)
         return []
     # SDIO radios can take several seconds to report their first completed scan.
-    for _ in range(16):
+    last_output = ""
+    for attempt in range(20):
         time.sleep(0.5)
         rc, out = _wpa("scan_results")
+        last_output = out
         if rc != 0:
             continue
         networks = parse_scan_results(out)
         if networks:
             return networks
+        # A driver can report FAIL-BUSY for an old scan and then return an empty
+        # cache. Trigger one fresh scan after that operation has had time to end.
+        if attempt == 9:
+            _wpa("scan")
     _last_scan_error = f"NO VISIBLE WIFI NETWORKS FOUND ON {iface}"
+    _record_scan_failure(_last_scan_error, last_output)
     return []
 
 

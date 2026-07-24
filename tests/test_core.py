@@ -746,6 +746,14 @@ class TestWifiScanParse(unittest.TestCase):
         self.assertEqual(parse_scan_results(""), [])
         self.assertEqual(parse_scan_results("bssid / freq / signal / flags / ssid\n"), [])
 
+    def test_parse_accepts_wpa_cli_preamble_or_no_header(self):
+        row = "aa:bb:cc:dd:ee:ff\t2412\t-42\t[WPA2-PSK-CCMP][ESS]\tHome\n"
+        self.assertEqual(
+            [n.ssid for n in parse_scan_results("Selected interface 'wlan0'\n" + row)],
+            ["Home"],
+        )
+        self.assertEqual([n.ssid for n in parse_scan_results(row)], ["Home"])
+
     def test_wifi_credentials_are_encoded_for_wpa_supplicant(self):
         self.assertEqual(_wpa_string('a"b\\c'),'"a\\"b\\\\c"')
         self.assertEqual(_psk_value("a-password!"),'"a-password!"')
@@ -793,6 +801,24 @@ class TestWifiScanFlow(unittest.TestCase):
         wpa.side_effect=[(0,"PONG\n"),(0,"FAIL-BUSY\n"),(0,rows)]
         self.assertEqual([item.ssid for item in network.scan()],["Home"])
         self.assertEqual(network.scan_error(),"")
+
+    @patch("handai.network._record_scan_failure")
+    @patch("handai.network.time.sleep")
+    @patch("handai.network.Path.exists", return_value=True)
+    @patch("handai.network._wpa")
+    @patch("handai.network._iface", return_value="wlan0")
+    @patch("handai.network.available", return_value=True)
+    def test_empty_scan_is_retriggered_and_writes_diagnostics(
+            self,_available,_iface,wpa,_exists,_sleep,record):
+        wpa.side_effect = (
+            [(0,"PONG\n"),(0,"OK\n")] +
+            [(0,"bssid / frequency / signal level / flags / ssid\n")] * 10 +
+            [(0,"OK\n")] +
+            [(0,"bssid / frequency / signal level / flags / ssid\n")] * 10
+        )
+        self.assertEqual(network.scan(),[])
+        self.assertIn(("scan",),[call.args for call in wpa.call_args_list])
+        record.assert_called_once()
 
     @patch("handai.network.status_raw",return_value="wpa_state=COMPLETED\n")
     @patch("handai.network._find_saved",return_value="3")

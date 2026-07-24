@@ -56,6 +56,14 @@ append_boot_log() {
 			tail -n 80 /data/handai/cockpit.log 2>/dev/null
 			echo "--- SELF TEST END ---"
 		fi
+		if [ "$STAGE" = "WIFI_ERROR" ]; then
+			echo "--- WIFI SCAN DIAGNOSTIC ---"
+			cat /data/handai/wifi-scan-latest.log 2>/dev/null ||
+				echo "wifi scan report unavailable"
+			echo "--- NETWORK LOG TAIL ---"
+			tail -n 120 /data/handai/net.log 2>/dev/null
+			echo "--- WIFI DIAGNOSTIC END ---"
+		fi
 		if [ "$STAGE" = "STORAGE_GROW" ]; then
 			echo "--- STORAGE GROW LOG ---"
 			cat /tmp/handai-storage-grow.log 2>/dev/null ||
