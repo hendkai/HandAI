@@ -48,6 +48,7 @@ start() {
 		--progress 96 "STARTING GUI" >>/data/handai/cockpit.log 2>&1 || true
 
 	# run the cockpit on tty1, respawn forever
+	rm -f /run/handai-gui-ready
 	(
 		while true; do
 			env $DAEMON_ENV \
@@ -62,6 +63,19 @@ start() {
 		done
 	) &
 	echo $! > /var/run/handai.pid
+	attempt=0
+	while [ "$attempt" -lt 40 ] && [ ! -e /run/handai-gui-ready ]; do
+		attempt=$((attempt + 1))
+		sleep 0.25
+	done
+	if [ -e /run/handai-gui-ready ]; then
+		echo "[handai] gui ready"
+		/usr/sbin/handai-boot-log GUI_READY "cockpit frontend initialized"
+	else
+		echo "[handai] gui ready timeout"
+		/usr/sbin/handai-boot-log GUI_ERROR \
+			"cockpit did not publish ready marker within 10 seconds"
+	fi
 
 	# Publish one delayed, read-only hardware acceptance report into the FAT
 	# boot log. The user can insert the SD card into Windows and send us this

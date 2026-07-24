@@ -553,9 +553,12 @@ class TestPreferences(unittest.TestCase):
         )
         with tempfile.TemporaryDirectory() as d:
             logger = Path(d) / "handai-boot-log"
+            marker = Path(d) / "gui-ready"
             logger.touch()
-            with patch("handai.pixelgui.os.name", "posix"):
-                self.assertTrue(publish_gui_ready(ui, logger))
+            with patch("handai.pixelgui.os.name", "posix"), \
+                    patch.dict(os.environ,{"HANDAI_GUI_READY":str(marker)}):
+                self.assertTrue(publish_gui_ready(ui, logger, marker))
+            self.assertTrue(marker.exists())
         argv = run.call_args.args[0]
         self.assertEqual(argv[1], "GUI_READY")
         self.assertIn("controller=yes", argv[2])

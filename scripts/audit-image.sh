@@ -156,6 +156,10 @@ grep -q 'GUI_READY' "$TMP/rootfs/opt/handai/handai/pixelgui.py" || {
 	echo "GUI-ready runtime marker is missing" >&2
 	exit 1
 }
+grep -q '\[handai\] gui ready' "$TMP/rootfs/etc/init.d/S99handai" || {
+	echo "GUI-ready init handshake is missing" >&2
+	exit 1
+}
 grep -q 'def _ensure_control' "$TMP/rootfs/opt/handai/handai/network.py" || {
 	echo "WiFi boot-race recovery is missing" >&2
 	exit 1

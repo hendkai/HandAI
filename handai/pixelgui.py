@@ -1543,9 +1543,17 @@ class PixelCockpit:
 
 
 def publish_gui_ready(
-    ui: SDL, logger: Path = Path("/usr/sbin/handai-boot-log")
+    ui: SDL, logger: Path = Path("/usr/sbin/handai-boot-log"),
+    marker: Path | None = None,
 ) -> bool:
     """Persist proof that SDL and the handheld input backends initialized."""
+    if os.name == "posix":
+        marker=marker or Path(os.environ.get("HANDAI_GUI_READY","/run/handai-gui-ready"))
+        try:
+            marker.parent.mkdir(parents=True,exist_ok=True)
+            marker.touch()
+        except OSError:
+            pass
     if os.name == "posix" and logger.exists():
         evdev = str(ui.evdev.path) if ui.evdev and ui.evdev.path else "none"
         controller = "yes" if ui.pad else "no"

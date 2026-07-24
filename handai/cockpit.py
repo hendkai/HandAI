@@ -9,8 +9,10 @@ an SDL2/DRM front-end that drives the identical core (config/router/tmux).
 from __future__ import annotations
 
 import curses
+import os
 import shlex
 import subprocess
+from pathlib import Path
 from typing import Callable
 
 from . import network, remote, skills, tmux
@@ -438,6 +440,12 @@ class Cockpit:
         try:
             curses.curs_set(0)
         except curses.error:
+            pass
+        marker=Path(os.environ.get("HANDAI_GUI_READY","/run/handai-gui-ready"))
+        try:
+            marker.parent.mkdir(parents=True,exist_ok=True)
+            marker.touch()
+        except OSError:
             pass
         menu = [
             ("New session", self._new_session),

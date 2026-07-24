@@ -11,7 +11,7 @@ TIMEOUT="${2:-90}"
 KERNEL="$IMG/Image"
 ROOTFS="$IMG/rootfs.ext4"
 LOG="$IMG/qemu-serial.log"   # kept next to the image so CI can upload it on failure
-MARKER="[handai] boot ok"
+MARKER="[handai] gui ready"
 
 for f in "$KERNEL" "$ROOTFS"; do
 	[ -f "$f" ] || { echo "missing $f — build first" >&2; exit 2; }
