@@ -86,6 +86,7 @@ for path in \
 	bin/bash \
 	usr/bin/tailscale \
 	usr/sbin/tailscaled \
+	usr/sbin/iptables \
 	lib/libudev.so.1 \
 	lib/libudev.so.1.6.3 \
 	usr/bin/qrencode \

@@ -1113,9 +1113,11 @@ class TestHardwareReport(unittest.TestCase):
                 path = root / name; path.parent.mkdir(parents=True, exist_ok=True); path.write_text(value)
             for directory in ("dev/input", "sys/class/net/wlan0/wireless", "data", "lib/modules/4.9.170"):
                 (root / directory).mkdir(parents=True, exist_ok=True)
+            (root / "dev/net").mkdir(parents=True)
+            (root / "dev/net/tun").touch()
             (root / "sys/class/bluetooth/hci0").mkdir(parents=True)
             (root / "dev/input/event0").touch()
-            for command in ("handai", "python3", "ssh", "tmux", "tailscale",
+            for command in ("handai", "python3", "ssh", "tmux", "tailscale", "iptables",
                             "tailscaled", "qrencode", "rtk_hciattach"):
                 path = root / "usr/bin" / command; path.parent.mkdir(parents=True, exist_ok=True); path.touch()
             results = hardware_report.collect(root)

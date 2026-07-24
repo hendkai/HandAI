@@ -86,6 +86,9 @@ def collect(root: Path = Path("/")) -> list[Result]:
     bluetooth = sorted(p.name for p in (sys / "class/bluetooth").glob("hci*"))
     results.append(Result("bluetooth radio", bool(bluetooth), True,
                           ",".join(bluetooth) or "no Bluetooth HCI controller"))
+    tun = root / "dev/net/tun"
+    results.append(Result("tailscale tunnel", tun.exists(), True,
+                          str(tun) if tun.exists() else "/dev/net/tun is missing"))
 
     batteries = _glob_text(sys / "class/power_supply", "*", "capacity")
     statuses = _glob_text(sys / "class/power_supply", "*", "status")
@@ -106,7 +109,7 @@ def collect(root: Path = Path("/")) -> list[Result]:
                           str(firmware)))
 
     for command in ("handai", "python3", "ssh", "tmux", "tailscale", "tailscaled",
-                    "qrencode", "rtk_hciattach"):
+                    "iptables", "qrencode", "rtk_hciattach"):
         found = shutil.which(command) if root == Path("/") else next(
             (str(root / base / command) for base in ("usr/bin", "usr/sbin", "bin", "sbin")
              if (root / base / command).exists()), None)
