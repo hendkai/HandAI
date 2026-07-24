@@ -96,7 +96,10 @@ for path in \
 	usr/sbin/wpa_cli \
 	usr/sbin/rfkill \
 	sbin/dhcpcd \
+	opt/handai/net/up.sh \
 	opt/handai/net/chip.sh \
+	usr/sbin/iw \
+	usr/bin/killall \
 	usr/share/handai/demo-agent.sh \
 	usr/bin/pipewire \
 	usr/bin/pw-play \
@@ -162,6 +165,18 @@ grep -q '\[handai\] gui ready OK' "$TMP/rootfs/etc/init.d/S99handai" || {
 }
 grep -q 'def _ensure_control' "$TMP/rootfs/opt/handai/handai/network.py" || {
 	echo "WiFi boot-race recovery is missing" >&2
+	exit 1
+}
+grep -q 'def _record_scan_failure' "$TMP/rootfs/opt/handai/handai/network.py" || {
+	echo "persistent WiFi scan diagnostics are missing" >&2
+	exit 1
+}
+grep -q 'restarting stale wpa_supplicant' "$TMP/rootfs/opt/handai/net/up.sh" || {
+	echo "stale wpa_supplicant recovery is missing" >&2
+	exit 1
+}
+grep -q 'WIFI SCAN DIAGNOSTIC' "$TMP/rootfs/usr/sbin/handai-boot-log" || {
+	echo "Windows-readable WiFi failure diagnostics are missing" >&2
 	exit 1
 }
 grep -q 'def pair_with_password' "$TMP/rootfs/opt/handai/handai/remote.py" || {
