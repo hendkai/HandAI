@@ -170,6 +170,12 @@ grep -q 'def osk_tokens' "$TMP/rootfs/opt/handai/handai/pixelgui.py" &&
 	echo "case-sensitive on-screen keyboard switching is missing" >&2
 	exit 1
 }
+grep -q 'class MediaKeyInput' "$TMP/rootfs/opt/handai/handai/pixelgui.py" &&
+	grep -q '115: "volume_up"' "$TMP/rootfs/opt/handai/handai/pixelgui.py" &&
+	grep -q 'handle_system_action' "$TMP/rootfs/opt/handai/handai/pixelgui.py" || {
+	echo "RG35XXSP hardware volume-key support is missing" >&2
+	exit 1
+}
 grep -q '\[handai\] gui ready OK' "$TMP/rootfs/etc/init.d/S99handai" || {
 	echo "GUI-ready init handshake is missing" >&2
 	exit 1
