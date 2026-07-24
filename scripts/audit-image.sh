@@ -77,6 +77,7 @@ for path in \
 	usr/bin/node \
 	usr/bin/npm \
 	usr/bin/git \
+	usr/bin/rg \
 	usr/bin/xz \
 	sbin/sfdisk \
 	usr/sbin/partx \

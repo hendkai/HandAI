@@ -36,6 +36,7 @@ BR2_PACKAGE_LIBCURL=y
 BR2_PACKAGE_LIBCURL_CURL=y
 BR2_PACKAGE_GIT=y
 BR2_PACKAGE_XZ=y
+BR2_PACKAGE_RIPGREP=y
 
 # --- networking (WiFi from the cockpit) --------------------------------------
 BR2_PACKAGE_WPA_SUPPLICANT=y

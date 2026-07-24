@@ -205,7 +205,7 @@ class Cockpit:
             host = self._pick(stdscr, "OAuth host", hosts, lambda x: x)
             if host:
                 self._login(stdscr, p, "oauth-device", host)
-        elif act == "Enter API key":
+        elif act == "Advanced: enter access token":
             self._login(stdscr, p, "token-env")
         elif act == "Push token to host":
             self._push_token(stdscr, p)
@@ -220,7 +220,7 @@ class Cockpit:
             if any(m.is_remote for m in self.cfg.modes_for(p)):
                 acts.append("OAuth login on remote")
         if p.supports_auth("token-env"):
-            acts.append("Enter API key")
+            acts.append("Advanced: enter access token")
             # offer host provisioning if this provider can run on any ssh mode
             if any(m.is_remote for m in self.cfg.modes_for(p)) and self.secrets.has(p.id):
                 acts.append("Push token to host")
