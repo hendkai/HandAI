@@ -33,7 +33,7 @@ from handai.router import _cd_expr, build_target, session_name
 from handai.secrets import SecretStore
 from handai import remote, tmux
 from handai import phone, tailscale
-from handai.pixelgui import DEEPLAY_CONTROLLER_MAPPING, EvdevInput, OSK_CHARS, PixelCockpit, THEMES, load_theme, save_theme, provider_actions, provider_brand, openclaw_gateway_health_argv, osk_tokens, publish_gui_ready, _FONT
+from handai.pixelgui import DEEPLAY_CONTROLLER_MAPPING, EvdevInput, MediaKeyInput, OSK_CHARS, PixelCockpit, THEMES, load_theme, save_theme, provider_actions, provider_brand, openclaw_gateway_health_argv, osk_tokens, publish_gui_ready, _FONT
 
 
 def _claude():
@@ -332,6 +332,25 @@ class TestNativeOAuth(unittest.TestCase):
         self.assertEqual(messages[-1][0],"OAUTH LOGIN COMPLETE")
         self.assertFalse(cockpit.music.paused)
 
+    def test_physical_volume_action_changes_default_output_and_draws_osd(self):
+        calls=[]
+        class FakeUI:
+            PANEL2=(1,1,1);PINK=(2,2,2);GREEN=(3,3,3)
+            def rect(self,*args):calls.append(("rect",args))
+            def frame(self,*args):calls.append(("frame",args))
+            def text(self,*args,**kwargs):calls.append(("text",args))
+            def present(self):calls.append(("present",()))
+        cockpit=object.__new__(PixelCockpit)
+        cockpit.ui=FakeUI();cockpit.status=""
+        with patch.object(audio,"selected_sink",return_value=None), \
+                patch.object(audio,"get_volume",
+                             return_value=audio.VolumeState(45,False,"pipewire")), \
+                patch.object(audio,"set_volume",return_value=(True,"OUTPUT 50%")) as set_volume:
+            cockpit.handle_system_action("volume_up")
+        set_volume.assert_called_once_with("output",50,False,sink=None)
+        self.assertEqual(cockpit.status,"OUTPUT 50%")
+        self.assertTrue(any(call[0]=="present" for call in calls))
+
     def test_provider_home_actions_follow_provider_capabilities(self):
         claude=Provider("claude","Claude",["claude"],skills_dir="~/.claude/skills")
         actions=provider_actions(claude,[LOCAL,DEVBOX])
@@ -548,12 +567,23 @@ class TestPreferences(unittest.TestCase):
         self.assertEqual(reader._decode(3, 17, 1), "down")
         self.assertIsNone(reader._decode(1, 304, 0))
 
+    def test_linux_media_volume_key_codes(self):
+        self.assertEqual(MediaKeyInput._decode(1,113,1),"volume_mute")
+        self.assertEqual(MediaKeyInput._decode(1,114,1),"volume_down")
+        self.assertEqual(MediaKeyInput._decode(1,115,1),"volume_up")
+        self.assertEqual(MediaKeyInput._decode(1,115,2),"volume_up")
+        self.assertIsNone(MediaKeyInput._decode(1,113,2))
+        self.assertIsNone(MediaKeyInput._decode(1,115,0))
+
     @patch("handai.pixelgui.subprocess.run")
     def test_gui_ready_marker_reports_open_input_backend(self, run):
         run.return_value = subprocess.CompletedProcess([], 0)
         ui = types.SimpleNamespace(
             pad=object(),
             evdev=types.SimpleNamespace(path=Path("/dev/input/event3")),
+            media_keys=types.SimpleNamespace(
+                devices=[(7,Path("/dev/input/event5"),"gpio-keys")]
+            ),
         )
         with tempfile.TemporaryDirectory() as d:
             logger = Path(d) / "handai-boot-log"
@@ -567,6 +597,7 @@ class TestPreferences(unittest.TestCase):
         self.assertEqual(argv[1], "GUI_READY")
         self.assertIn("controller=yes", argv[2])
         self.assertIn("event3", argv[2])
+        self.assertIn("media=event5", argv[2])
 
     def test_first_run_and_button_map_persist(self):
         with tempfile.TemporaryDirectory() as d:

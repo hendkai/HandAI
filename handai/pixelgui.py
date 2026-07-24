@@ -163,6 +163,58 @@ class EvdevInput:
         return None
 
 
+class MediaKeyInput:
+    """Listen for volume keys even when they live on a separate input device."""
+
+    _EVENT = struct.Struct("@llHHi")
+    _KEY_ACTIONS = {
+        113: "volume_mute",  # KEY_MUTE
+        114: "volume_down",  # KEY_VOLUMEDOWN
+        115: "volume_up",    # KEY_VOLUMEUP
+    }
+
+    def __init__(self):
+        self.devices: list[tuple[int, Path, str]] = []
+        self.pending: deque[str] = deque()
+        for path,name in EvdevInput._device_paths():
+            try:
+                fd=os.open(path,os.O_RDONLY|os.O_NONBLOCK)
+            except OSError:
+                continue
+            self.devices.append((fd,path,name))
+        names=", ".join(f"{path.name}:{name}" for _,path,name in self.devices) or "none"
+        print(f"input: media-key listeners={names}",file=sys.stderr)
+
+    @classmethod
+    def _decode(cls,event_type:int,code:int,value:int)->str|None:
+        if event_type!=1 or code not in cls._KEY_ACTIONS:
+            return None
+        if value==1 or (value==2 and code in (114,115)):
+            return cls._KEY_ACTIONS[code]
+        return None
+
+    def close(self)->None:
+        for fd,_,_ in self.devices:
+            try:os.close(fd)
+            except OSError:pass
+        self.devices.clear()
+
+    def poll(self,timeout:float=0.0)->str|None:
+        if self.pending:return self.pending.popleft()
+        fds=[fd for fd,_,_ in self.devices]
+        if not fds:return None
+        try:readable,_,_=select.select(fds,[],[],max(0.0,timeout))
+        except (OSError,ValueError):return None
+        for fd in readable:
+            try:payload=os.read(fd,self._EVENT.size*32)
+            except (BlockingIOError,OSError):continue
+            for offset in range(0,len(payload)-self._EVENT.size+1,self._EVENT.size):
+                _,_,event_type,code,value=self._EVENT.unpack_from(payload,offset)
+                action=self._decode(event_type,code,value)
+                if action:self.pending.append(action)
+        return self.pending.popleft() if self.pending else None
+
+
 @dataclass(frozen=True)
 class Theme:
     id: str
@@ -316,7 +368,9 @@ class SDL:
         name=name or "libSDL2-2.0.so.0"
         try: self.s=ctypes.CDLL(name)
         except OSError as e: raise RuntimeError(f"SDL2 unavailable: {e}") from e
-        self._bind(); self.window=None; self.renderer=None; self.pad=None; self.evdev=None
+        self._bind(); self.window=None; self.renderer=None; self.pad=None; self.evdev=None;self.media_keys=None
+        self.system_action_handler:Callable[[str],None]|None=None
+        self._last_system_action="";self._last_system_time=0.0
         self.button_map=preferences.button_map()
         self.apply_theme(load_theme()); self.open()
 
@@ -371,11 +425,13 @@ class SDL:
             print("input: no SDL GameController opened",file=sys.stderr)
         if os.name == "posix":
             self.evdev=EvdevInput(self.button_map)
+            self.media_keys=MediaKeyInput()
         # Explicitly replace the framebuffer boot diagnostic even before the
         # first menu is composed.  This also makes an input wait unmistakable.
         self.clear(); self.present()
 
     def close(self):
+        if self.media_keys:self.media_keys.close();self.media_keys=None
         if self.evdev: self.evdev.close(); self.evdev=None
         if self.pad: self.s.SDL_GameControllerClose(self.pad); self.pad=None
         if self.renderer: self.s.SDL_DestroyRenderer(self.renderer); self.renderer=None
@@ -404,21 +460,38 @@ class SDL:
             scan=int.from_bytes(bytes(buf[16:20]),"little",signed=True)
             key=int.from_bytes(bytes(buf[20:24]),"little",signed=True)
             action={1073741906:"up",1073741905:"down",1073741904:"left",1073741903:"right",
+                    1073741951:"volume_mute",1073741952:"volume_up",1073741953:"volume_down",
                     13:"done",1073741912:"done",32:"a",65:"a",97:"a",66:"b",98:"b",
                     27:"cancel",8:"b",81:"quit",113:"quit"}.get(key)
             return action or {4:"a",5:"b",40:"done",41:"cancel",42:"b",44:"a"}.get(scan,"none")
         if typ==0x651:return self.button_map.get(buf[12],"none")
         return "none"
 
+    def _dispatch_system_action(self,action:str)->bool:
+        if not action.startswith("volume_"):return False
+        now=time.monotonic()
+        if action==self._last_system_action and now-self._last_system_time<0.12:
+            return True
+        self._last_system_action=action;self._last_system_time=now
+        if self.system_action_handler:self.system_action_handler(action)
+        return True
+
     def event(self):
         buf=(ctypes.c_uint8*64)()
         while True:
             if self.s.SDL_WaitEventTimeout(ctypes.byref(buf),50):
                 action=self._decode_event(buf)
-                if action!="none":return action
+                if action!="none":
+                    if self._dispatch_system_action(action):continue
+                    return action
             if self.evdev:
                 action=self.evdev.poll()
                 if action:return action
+            if self.media_keys:
+                action=self.media_keys.poll()
+                if action:
+                    if self._dispatch_system_action(action):continue
+                    return action
 
     def event_timeout(self,milliseconds=250):
         """Wait briefly so background login/status screens can keep repainting."""
@@ -429,10 +502,17 @@ class SDL:
             if remaining<=0:return "timeout"
             if self.s.SDL_WaitEventTimeout(ctypes.byref(buf),min(50,max(1,int(remaining*1000)))):
                 action=self._decode_event(buf)
-                if action!="none":return action
+                if action!="none":
+                    if self._dispatch_system_action(action):continue
+                    return action
             if self.evdev:
                 action=self.evdev.poll()
                 if action:return action
+            if self.media_keys:
+                action=self.media_keys.poll()
+                if action:
+                    if self._dispatch_system_action(action):continue
+                    return action
 
     def raw_button(self)->int|None:
         """Wait for one controller button; Escape cancels calibration."""
@@ -454,6 +534,21 @@ class PixelCockpit:
         self.cfg=cfg; self.secrets=secrets; self.ui=ui; self.status="SYSTEM READY"
         self.hub=skills.hub_dir(cfg.skills_dir)
         self.music=music.MusicPlayer()
+        self.ui.system_action_handler=self.handle_system_action
+
+    def handle_system_action(self,action:str):
+        sink=audio.selected_sink();state=audio.get_volume("output",sink=sink)
+        percent=state.percent;muted=state.muted
+        if action=="volume_up":percent=min(100,percent+5);muted=False
+        elif action=="volume_down":percent=max(0,percent-5);muted=False
+        elif action=="volume_mute":muted=not muted
+        else:return
+        ok,msg=audio.set_volume("output",percent,muted,sink=sink)
+        self.status=msg if ok else f"VOLUME FAILED: {msg}"
+        u=self.ui;color=u.PINK if muted or not ok else u.GREEN
+        u.rect(198,76,244,62,u.PANEL2);u.frame(198,76,244,62,color,3)
+        label="MUTED" if muted and ok else f"VOLUME {percent}%" if ok else "AUDIO ERROR"
+        u.text(222,96,label,color,3,max_chars=18);u.present()
 
     def chrome(self,title:str,subtitle:str=""):
         u=self.ui; u.clear(); u.rect(0,0,640,58,u.PANEL); u.rect(0,55,640,3,u.CYAN)
@@ -1582,10 +1677,12 @@ def publish_gui_ready(
     if os.name == "posix" and logger.exists():
         evdev = str(ui.evdev.path) if ui.evdev and ui.evdev.path else "none"
         controller = "yes" if ui.pad else "no"
+        media=getattr(ui,"media_keys",None)
+        media_paths=",".join(path.name for _,path,_ in media.devices) if media else "none"
         try:
             result = subprocess.run(
                 [str(logger), "GUI_READY",
-                 f"SDL ready; controller={controller}; evdev={evdev}"],
+                 f"SDL ready; controller={controller}; evdev={evdev}; media={media_paths}"],
                 timeout=4,
             )
             return result.returncode == 0
