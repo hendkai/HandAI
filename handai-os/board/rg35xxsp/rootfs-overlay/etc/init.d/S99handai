@@ -51,9 +51,17 @@ start() {
 	rm -f /run/handai-gui-ready
 	(
 		while true; do
-			env $DAEMON_ENV \
-				/usr/bin/python3 -m handai <"$HANDAI_TTY" \
-				>>/data/handai/cockpit.log 2>&1
+			if [ "$HANDAI_UI" = "text" ]; then
+				# curses needs a real output tty. Keep stderr in the diagnostic
+				# log while rendering the QEMU/recovery UI on the console.
+				env $DAEMON_ENV \
+					/usr/bin/python3 -m handai <"$HANDAI_TTY" \
+					>"$HANDAI_TTY" 2>>/data/handai/cockpit.log
+			else
+				env $DAEMON_ENV \
+					/usr/bin/python3 -m handai <"$HANDAI_TTY" \
+					>>/data/handai/cockpit.log 2>&1
+			fi
 			status=$?
 			/usr/sbin/handai-boot-log GUI_ERROR "cockpit exited with code $status"
 			env $DAEMON_ENV /usr/bin/python3 -m handai.bootdiag \
@@ -69,10 +77,11 @@ start() {
 		sleep 0.25
 	done
 	if [ -e /run/handai-gui-ready ]; then
-		echo "[handai] gui ready"
+		echo "[handai] gui ready OK"
 		/usr/sbin/handai-boot-log GUI_READY "cockpit frontend initialized"
 	else
 		echo "[handai] gui ready timeout"
+		tail -n 40 /data/handai/cockpit.log 2>/dev/null || true
 		/usr/sbin/handai-boot-log GUI_ERROR \
 			"cockpit did not publish ready marker within 10 seconds"
 	fi

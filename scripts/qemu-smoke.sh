@@ -11,7 +11,7 @@ TIMEOUT="${2:-90}"
 KERNEL="$IMG/Image"
 ROOTFS="$IMG/rootfs.ext4"
 LOG="$IMG/qemu-serial.log"   # kept next to the image so CI can upload it on failure
-MARKER="[handai] gui ready"
+MARKER="[handai] gui ready OK"
 
 for f in "$KERNEL" "$ROOTFS"; do
 	[ -f "$f" ] || { echo "missing $f — build first" >&2; exit 2; }
@@ -34,13 +34,13 @@ echo "----- serial log (tail) -----"
 tail -n 40 "$LOG" || true
 echo "-----------------------------"
 
-FATAL='syntax error|Traceback \(most recent call last\)|GUI FAILED|Kernel panic|not syncing'
+FATAL='syntax error|Traceback \(most recent call last\)|GUI FAILED|gui ready timeout|Kernel panic|not syncing'
 if grep -Eq "$FATAL" "$LOG"; then
 	echo "SMOKE FAIL: fatal userspace/kernel error found in serial output" >&2
 	grep -En "$FATAL" "$LOG" | tail -n 20 >&2
 	exit 1
 fi
-if grep -qF "$MARKER" "$LOG"; then
+if grep -aqF "$MARKER" "$LOG"; then
 	echo "SMOKE PASS: cockpit reached boot marker"
 	exit 0
 fi
