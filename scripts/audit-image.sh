@@ -198,7 +198,8 @@ grep -Fq 'return ["CASE"]' "$TMP/rootfs/opt/handai/handai/pixelgui.py" &&
 	exit 1
 }
 grep -q 'def _alsa_volume_controls' "$TMP/rootfs/opt/handai/handai/audio.py" &&
-	grep -q 'route_h700_codec' "$TMP/rootfs/etc/init.d/S45handai-audio" || {
+	grep -q 'route_h700_codec' "$TMP/rootfs/etc/init.d/S45handai-audio" &&
+	grep -q 'AUDIO_ERROR' "$TMP/rootfs/usr/sbin/handai-boot-log" || {
 	echo "H700 PipeWire-to-ALSA volume fallback is missing" >&2
 	exit 1
 }

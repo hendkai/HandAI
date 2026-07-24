@@ -17,6 +17,7 @@ import shutil
 import struct
 import subprocess
 import tempfile
+import time
 import urllib.error
 import urllib.request
 import wave
@@ -28,6 +29,7 @@ from . import preferences
 MODEL_URL = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny-q5_1.bin"
 MODEL_SHA256 = "818710568da3ca15689e31a743197b520007872ff9576237bda97bd1b469c3d7"
 _ALSA_VOLUME_CACHE: dict[bool, tuple[str, str]] = {}
+_LAST_AUDIO_ERROR = ("", 0.0)
 
 
 @dataclass(frozen=True)
@@ -225,16 +227,44 @@ def parse_wpctl_volume(text: str) -> VolumeState | None:
 
 
 def parse_amixer_volume(text: str) -> VolumeState | None:
-    matches = re.findall(r"\[(\d{1,3})%\][^\r\n]*?\[(on|off)\]", str(text), re.IGNORECASE)
-    if not matches:
+    # H700 DAC controls often expose a percentage but no playback switch.
+    # Desktop/USB mixers commonly append [on]/[off]. Both are valid controls.
+    percentages = re.findall(r"\[(\d{1,3})%\]", str(text))
+    if not percentages:
         return None
-    percent, state = matches[-1]
-    return VolumeState(max(0, min(100, int(percent))), state.lower() == "off", "alsa")
+    switches = re.findall(r"\[(on|off)\]", str(text), re.IGNORECASE)
+    return VolumeState(
+        max(0, min(100, int(percentages[-1]))),
+        bool(switches and switches[-1].casefold() == "off"),
+        "alsa",
+    )
 
 
 def parse_amixer_controls(text: str) -> list[str]:
     """Return simple mixer control names in the order reported by ALSA."""
     return re.findall(r"Simple mixer control '([^']+)'", str(text))
+
+
+def _log_audio_error(detail: str) -> None:
+    """Persist a rate-limited mixer snapshot to the SD card's FAT partition."""
+    global _LAST_AUDIO_ERROR
+    message = " ".join(str(detail).split())[:160] or "unknown audio error"
+    now = time.monotonic()
+    if message == _LAST_AUDIO_ERROR[0] and now - _LAST_AUDIO_ERROR[1] < 10:
+        return
+    _LAST_AUDIO_ERROR = (message, now)
+    helper = "/usr/sbin/handai-boot-log"
+    if not os.path.exists(helper):
+        return
+    try:
+        subprocess.run(
+            [helper, "AUDIO_ERROR", message],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=8,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        pass
 
 
 def _alsa_volume_controls(is_input: bool) -> list[tuple[str, str, VolumeState]]:
@@ -331,17 +361,28 @@ def set_volume(kind: str, percent: int, muted: bool = False,
             switch = ("cap" if is_input and not muted else
                       "nocap" if is_input else
                       "unmute" if not muted else "mute")
-            result = _run(
-                ["amixer", "-c", card, "sset", control, f"{value}%", switch]
-            )
-            if result and result.returncode == 0:
-                return True, f"{'MIC' if is_input else 'OUTPUT'} {value}%"
-            if result:
-                errors.append((result.stderr or result.stdout).strip())
+            attempts = [
+                ["amixer", "-c", card, "sset", control, f"{value}%", switch],
+                # Codec volume controls without a mute switch reject
+                # "unmute"; setting the percentage alone is correct.
+                ["amixer", "-c", card, "sset", control,
+                 f"{0 if muted else value}%"],
+            ]
+            for argv in attempts:
+                result = _run(argv)
+                if result and result.returncode == 0:
+                    return True, (
+                        f"{'MIC' if is_input else 'OUTPUT'} "
+                        f"{'MUTED' if muted else f'{value}%'}"
+                    )
+                if result:
+                    errors.append((result.stderr or result.stdout).strip())
         if not controls:
             errors.append("NO ALSA VOLUME CONTROL")
     detail = next((line for line in errors if line), "NO AUDIO MIXER FOUND")
-    return False, detail[:160]
+    detail = detail[:160]
+    _log_audio_error(detail)
+    return False, detail
 
 
 def record_argv(source: AudioSource, target: Path) -> list[str]:

@@ -64,6 +64,20 @@ append_boot_log() {
 			tail -n 120 /data/handai/net.log 2>/dev/null
 			echo "--- WIFI DIAGNOSTIC END ---"
 		fi
+		if [ "$STAGE" = "AUDIO_ERROR" ]; then
+			echo "--- AUDIO MIXER DIAGNOSTIC ---"
+			echo "XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-unset}"
+			wpctl status 2>&1 || true
+			echo "--- ALSA CARDS ---"
+			aplay -l 2>&1 || true
+			echo "--- CARD 0 SIMPLE CONTROLS ---"
+			amixer -c 0 scontrols 2>&1 || true
+			echo "--- CARD 0 CONTENTS ---"
+			amixer -c 0 scontents 2>&1 || true
+			echo "--- AUDIO SERVICE LOG ---"
+			tail -n 120 /data/handai/audio.log 2>/dev/null
+			echo "--- AUDIO DIAGNOSTIC END ---"
+		fi
 		if [ "$STAGE" = "STORAGE_GROW" ]; then
 			echo "--- STORAGE GROW LOG ---"
 			cat /tmp/handai-storage-grow.log 2>/dev/null ||

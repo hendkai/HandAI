@@ -1071,6 +1071,8 @@ class TestVoiceInput(unittest.TestCase):
                          audio.VolumeState(42,True,"pipewire"))
         self.assertEqual(audio.parse_amixer_volume("Front Left: 37 [58%] [-20dB] [on]"),
                          audio.VolumeState(58,False,"alsa"))
+        self.assertEqual(audio.parse_amixer_volume("Mono: Playback 42 [66%] [-12.00dB]"),
+                         audio.VolumeState(66,False,"alsa"))
         self.assertEqual(
             audio.parse_amixer_controls(
                 "Simple mixer control 'DAC',0\nSimple mixer control 'LINEOUT',0\n"
@@ -1092,6 +1094,33 @@ class TestVoiceInput(unittest.TestCase):
         self.assertEqual(
             run.call_args_list[-1].args[0],
             ["amixer","-c","0","sset","DAC","45%","unmute"],
+        )
+
+    def test_h700_dac_retries_without_unsupported_unmute_argument(self):
+        rejected=subprocess.CompletedProcess(["amixer"],1,"","Invalid command")
+        changed=subprocess.CompletedProcess(["amixer"],0,"ok","")
+        sink=audio.AudioSink("default","H700 Codec","alsa")
+        with patch.object(audio.shutil,"which",return_value="/usr/bin/amixer"), \
+                patch.object(audio,"_alsa_volume_controls",return_value=[
+                    ("0","DAC",audio.VolumeState(40,False,"alsa"))
+                ]), \
+                patch.object(audio,"_run",side_effect=[rejected,changed]) as run:
+            ok,message=audio.set_volume("output",45,False,sink=sink)
+        self.assertTrue(ok)
+        self.assertEqual(message,"OUTPUT 45%")
+        self.assertEqual(
+            run.call_args_list[-1].args[0],
+            ["amixer","-c","0","sset","DAC","45%"],
+        )
+
+    def test_audio_error_is_persisted_through_boot_log_helper(self):
+        audio._LAST_AUDIO_ERROR=("",0.0)
+        with patch.object(audio.os.path,"exists",return_value=True), \
+                patch.object(audio.subprocess,"run") as run:
+            audio._log_audio_error("no default sink\nextra")
+        self.assertEqual(
+            run.call_args.args[0],
+            ["/usr/sbin/handai-boot-log","AUDIO_ERROR","no default sink extra"],
         )
 
     def test_generated_tone_has_measurable_signal(self):
