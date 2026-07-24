@@ -37,7 +37,7 @@ OSK_CHARS = string.ascii_uppercase + string.ascii_lowercase + string.digits + " 
 def osk_tokens(uppercase:bool=False)->list[str]:
     """One compact keyboard page plus an explicit case-toggle action."""
     letters=string.ascii_uppercase if uppercase else string.ascii_lowercase
-    return list(letters+string.digits+" "+string.punctuation)+["CASE"]
+    return ["CASE"]+list(letters+string.digits+" "+string.punctuation)
 
 # The H700 kernel exposes the built-in RG35XXSP controls as a generic
 # "Deeplay-keys" joystick.  SDL does not classify it as a GameController
@@ -548,15 +548,19 @@ class PixelCockpit:
         u=self.ui;color=u.PINK if muted or not ok else u.GREEN
         u.rect(198,76,244,62,u.PANEL2);u.frame(198,76,244,62,color,3)
         label="MUTED" if muted and ok else f"VOLUME {percent}%" if ok else "AUDIO ERROR"
-        u.text(222,96,label,color,3,max_chars=18);u.present()
+        u.text(222,90,label,color,3,max_chars=18)
+        if not ok:u.text(208,120,msg,color,1,max_chars=36)
+        u.present()
 
     def chrome(self,title:str,subtitle:str=""):
         u=self.ui; u.clear(); u.rect(0,0,640,58,u.PANEL); u.rect(0,55,640,3,u.CYAN)
         # Tiny pixel bot logo.
         u.rect(20,14,30,30,u.CYAN); u.rect(25,19,20,16,u.BG); u.rect(29,23,4,4,u.YELLOW); u.rect(38,23,4,4,u.YELLOW)
         u.text(64,12,"HANDAI",u.INK,3); u.text(64,38,"PIXEL COCKPIT",u.CYAN,1)
-        self.draw_battery()
-        short=title[:24]; u.text(max(322,620-len(short)*12),20,short,u.YELLOW,2)
+        # The battery belongs to a stable screen location, not among page
+        # titles.  Keep it pinned to the top-right corner on every chrome page.
+        self.draw_battery(548,16)
+        short=title[:18]; u.text(322,20,short,u.YELLOW,2,max_chars=18)
         if subtitle: u.text(22,72,subtitle,u.MUTED,1,max_chars=96)
 
     def draw_battery(self,x:int=236,y:int=18):
@@ -672,17 +676,19 @@ class PixelCockpit:
         cols=16; value=initial; pos=0; uppercase=False
         while True:
             chars=osk_tokens(uppercase)
-            self.chrome(title,f"ON-SCREEN KEYBOARD - CASE: {'UPPER' if uppercase else 'LOWER'} - SELECT CASE TO SWITCH")
+            current_case="UPPERCASE" if uppercase else "LOWERCASE"
+            target_case="LOW" if uppercase else "UP"
+            self.chrome(title,f"CURRENT: {current_case} - FIRST KEY [{target_case}] SWITCHES CASE")
             shown="*"*len(value) if secret else value
             self.ui.rect(20,86,600,42,self.ui.PANEL2); self.ui.text(34,100,shown[-47:],self.ui.YELLOW,2,max_chars=47)
             for i,ch in enumerate(chars):
                 x=20+(i%cols)*38; y=145+(i//cols)*41
                 self.ui.rect(x,y,32,34,self.ui.CYAN if i==pos else self.ui.PANEL)
-                label="SP" if ch==" " else "Aa" if ch=="CASE" else ch
+                label="SP" if ch==" " else target_case if ch=="CASE" else ch
                 scale=1 if ch in (" ","CASE") else 2
                 self.ui.text(x+(9 if ch in (" ","CASE") else 10),y+10,label,
                              self.ui.BG if i==pos else self.ui.INK,scale)
-            self.footer("D-PAD MOVE  A TYPE  B DELETE  START/ENTER DONE  ESC CANCEL"); self.ui.present(); e=self.ui.event()
+            self.footer("A TYPE / [UP-LOW] CASE   B DELETE   START DONE   SELECT CANCEL"); self.ui.present(); e=self.ui.event()
             if e=="left": pos=(pos-1)%len(chars)
             elif e=="right": pos=(pos+1)%len(chars)
             elif e=="up": pos=(pos-cols)%len(chars)

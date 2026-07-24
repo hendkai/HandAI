@@ -198,6 +198,8 @@ class TestPixelGuiPure(unittest.TestCase):
         self.assertTrue(all(char.upper() in _FONT for char in OSK_CHARS))
         lower=osk_tokens(False);upper=osk_tokens(True)
         self.assertIn("CASE",lower);self.assertIn("CASE",upper)
+        self.assertEqual(lower[0],"CASE")
+        self.assertEqual(upper[0],"CASE")
         self.assertEqual(set(lower)-{"CASE"},set(string.ascii_lowercase+string.digits+" "+string.punctuation))
         self.assertEqual(set(upper)-{"CASE"},set(string.ascii_uppercase+string.digits+" "+string.punctuation))
 
@@ -350,6 +352,19 @@ class TestNativeOAuth(unittest.TestCase):
         set_volume.assert_called_once_with("output",50,False,sink=None)
         self.assertEqual(cockpit.status,"OUTPUT 50%")
         self.assertTrue(any(call[0]=="present" for call in calls))
+
+    def test_standard_chrome_pins_battery_to_top_right(self):
+        class FakeUI:
+            PANEL=(1,1,1);CYAN=(2,2,2);BG=(3,3,3)
+            YELLOW=(4,4,4);INK=(5,5,5);MUTED=(6,6,6)
+            def clear(self):pass
+            def rect(self,*_args):pass
+            def text(self,*_args,**_kwargs):pass
+        cockpit=object.__new__(PixelCockpit)
+        cockpit.ui=FakeUI()
+        with patch.object(PixelCockpit,"draw_battery") as draw_battery:
+            cockpit.chrome("NETWORK")
+        draw_battery.assert_called_once_with(548,16)
 
     def test_provider_home_actions_follow_provider_capabilities(self):
         claude=Provider("claude","Claude",["claude"],skills_dir="~/.claude/skills")
@@ -1056,6 +1071,28 @@ class TestVoiceInput(unittest.TestCase):
                          audio.VolumeState(42,True,"pipewire"))
         self.assertEqual(audio.parse_amixer_volume("Front Left: 37 [58%] [-20dB] [on]"),
                          audio.VolumeState(58,False,"alsa"))
+        self.assertEqual(
+            audio.parse_amixer_controls(
+                "Simple mixer control 'DAC',0\nSimple mixer control 'LINEOUT',0\n"
+            ),
+            ["DAC", "LINEOUT"],
+        )
+
+    def test_volume_change_falls_back_from_pipewire_to_discovered_h700_dac(self):
+        failed=subprocess.CompletedProcess(["wpctl"],1,"","no default sink")
+        changed=subprocess.CompletedProcess(["amixer"],0,"ok","")
+        with patch.object(audio.shutil,"which",return_value="/usr/bin/tool"), \
+                patch.object(audio,"_alsa_volume_controls",return_value=[
+                    ("0","DAC",audio.VolumeState(40,False,"alsa"))
+                ]), \
+                patch.object(audio,"_run",side_effect=[failed,failed,changed]) as run:
+            ok,message=audio.set_volume("output",45,False)
+        self.assertTrue(ok)
+        self.assertEqual(message,"OUTPUT 45%")
+        self.assertEqual(
+            run.call_args_list[-1].args[0],
+            ["amixer","-c","0","sset","DAC","45%","unmute"],
+        )
 
     def test_generated_tone_has_measurable_signal(self):
         with tempfile.TemporaryDirectory() as d:

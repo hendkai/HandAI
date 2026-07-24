@@ -27,6 +27,7 @@ from . import preferences
 
 MODEL_URL = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny-q5_1.bin"
 MODEL_SHA256 = "818710568da3ca15689e31a743197b520007872ff9576237bda97bd1b469c3d7"
+_ALSA_VOLUME_CACHE: dict[bool, tuple[str, str]] = {}
 
 
 @dataclass(frozen=True)
@@ -231,6 +232,59 @@ def parse_amixer_volume(text: str) -> VolumeState | None:
     return VolumeState(max(0, min(100, int(percent))), state.lower() == "off", "alsa")
 
 
+def parse_amixer_controls(text: str) -> list[str]:
+    """Return simple mixer control names in the order reported by ALSA."""
+    return re.findall(r"Simple mixer control '([^']+)'", str(text))
+
+
+def _alsa_volume_controls(is_input: bool) -> list[tuple[str, str, VolumeState]]:
+    """Discover a usable volume control instead of assuming desktop 'Master'.
+
+    The H700 codec normally exposes DAC/Line Out controls, while USB headsets
+    commonly expose Speaker/Headphone or Capture.  Probe all likely cards and
+    keep only controls whose current value can actually be parsed.
+    """
+    preferred = (
+        ("Capture", "Mic", "ADC", "Input") if is_input else
+        ("Master", "PCM", "DAC", "Digital", "Line Out", "Lineout",
+         "Headphone", "Speaker")
+    )
+    cached = _ALSA_VOLUME_CACHE.get(is_input)
+    if cached:
+        card, name = cached
+        result = _run(["amixer", "-c", card, "sget", name])
+        parsed = parse_amixer_volume(
+            result.stdout if result and result.returncode == 0 else ""
+        )
+        if parsed:
+            return [(card, name, parsed)]
+        _ALSA_VOLUME_CACHE.pop(is_input, None)
+    for card in map(str, range(4)):
+        listing = _run(["amixer", "-c", card, "scontrols"])
+        if not listing or listing.returncode != 0:
+            continue
+        names = parse_amixer_controls(listing.stdout)
+        ordered = sorted(
+            names,
+            key=lambda name: next(
+                (index for index, token in enumerate(preferred)
+                 if token.casefold() in name.casefold()),
+                len(preferred),
+            ),
+        )
+        for name in ordered:
+            if not any(token.casefold() in name.casefold() for token in preferred):
+                continue
+            result = _run(["amixer", "-c", card, "sget", name])
+            parsed = parse_amixer_volume(
+                result.stdout if result and result.returncode == 0 else ""
+            )
+            if parsed:
+                _ALSA_VOLUME_CACHE[is_input] = (card, name)
+                return [(card, name, parsed)]
+    return []
+
+
 def get_volume(kind: str, source: AudioSource | None = None,
                sink: AudioSink | None = None) -> VolumeState:
     is_input = kind == "input"
@@ -244,12 +298,12 @@ def get_volume(kind: str, source: AudioSource | None = None,
         if parsed:
             return parsed
     if shutil.which("amixer"):
-        control = "Capture" if is_input else "Master"
-        result = _run(["amixer", "get", control])
-        parsed = parse_amixer_volume(result.stdout if result and result.returncode == 0 else "")
-        if parsed:
-            return parsed
-    return VolumeState(100, False, "unavailable")
+        controls = _alsa_volume_controls(is_input)
+        if controls:
+            return controls[0][2]
+    # A neutral midpoint makes the first key press useful even while an audio
+    # service is still appearing; set_volume will still report a real failure.
+    return VolumeState(50, False, "unavailable")
 
 
 def set_volume(kind: str, percent: int, muted: bool = False,
@@ -257,6 +311,7 @@ def set_volume(kind: str, percent: int, muted: bool = False,
     value = max(0, min(150 if kind == "output" else 100, int(percent)))
     is_input = kind == "input"
     selected_backend = source.backend if is_input and source else sink.backend if sink else None
+    errors: list[str] = []
     if shutil.which("wpctl") and selected_backend != "alsa":
         target = (source.id if is_input and source and source.backend == "pipewire"
                   else sink.id if not is_input and sink and sink.backend == "pipewire"
@@ -265,16 +320,28 @@ def set_volume(kind: str, percent: int, muted: bool = False,
         mute = _run(["wpctl", "set-mute", target, "1" if muted else "0"])
         if volume and mute and volume.returncode == 0 and mute.returncode == 0:
             return True, f"{'MIC' if is_input else 'OUTPUT'} {value}%"
-        detail = ((volume.stderr if volume else "") or (mute.stderr if mute else "")).strip()
-        return False, detail or "VOLUME CHANGE FAILED"
+        detail = ((volume.stderr if volume else "") or
+                  (mute.stderr if mute else "") or
+                  (volume.stdout if volume else "") or
+                  (mute.stdout if mute else "")).strip()
+        errors.append(detail or "PIPEWIRE HAS NO ACTIVE OUTPUT")
     if shutil.which("amixer"):
-        control = "Capture" if is_input else "Master"
-        result = _run(["amixer", "sset", control, f"{value}%", "cap" if is_input and not muted
-                       else "nocap" if is_input else "unmute" if not muted else "mute"])
-        if result and result.returncode == 0:
-            return True, f"{'MIC' if is_input else 'OUTPUT'} {value}%"
-        return False, ((result.stderr or result.stdout).strip() if result else "VOLUME CHANGE FAILED")
-    return False, "NO AUDIO MIXER FOUND"
+        controls = _alsa_volume_controls(is_input)
+        for card, control, _state in controls:
+            switch = ("cap" if is_input and not muted else
+                      "nocap" if is_input else
+                      "unmute" if not muted else "mute")
+            result = _run(
+                ["amixer", "-c", card, "sset", control, f"{value}%", switch]
+            )
+            if result and result.returncode == 0:
+                return True, f"{'MIC' if is_input else 'OUTPUT'} {value}%"
+            if result:
+                errors.append((result.stderr or result.stdout).strip())
+        if not controls:
+            errors.append("NO ALSA VOLUME CONTROL")
+    detail = next((line for line in errors if line), "NO AUDIO MIXER FOUND")
+    return False, detail[:160]
 
 
 def record_argv(source: AudioSource, target: Path) -> list[str]:

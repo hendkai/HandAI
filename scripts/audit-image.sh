@@ -192,9 +192,14 @@ grep -q 'def battery_state' "$TMP/rootfs/opt/handai/handai/power.py" &&
 	echo "live GUI battery status is missing" >&2
 	exit 1
 }
-grep -q 'def osk_tokens' "$TMP/rootfs/opt/handai/handai/pixelgui.py" &&
-	grep -q 'CASE:.*UPPER' "$TMP/rootfs/opt/handai/handai/pixelgui.py" || {
+grep -Fq 'return ["CASE"]' "$TMP/rootfs/opt/handai/handai/pixelgui.py" &&
+	grep -Fq 'CURRENT: {current_case}' "$TMP/rootfs/opt/handai/handai/pixelgui.py" || {
 	echo "case-sensitive on-screen keyboard switching is missing" >&2
+	exit 1
+}
+grep -q 'def _alsa_volume_controls' "$TMP/rootfs/opt/handai/handai/audio.py" &&
+	grep -q 'route_h700_codec' "$TMP/rootfs/etc/init.d/S45handai-audio" || {
+	echo "H700 PipeWire-to-ALSA volume fallback is missing" >&2
 	exit 1
 }
 grep -q 'class MediaKeyInput' "$TMP/rootfs/opt/handai/handai/pixelgui.py" &&
