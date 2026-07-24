@@ -160,6 +160,11 @@ grep -q 'GUI_READY' "$TMP/rootfs/opt/handai/handai/pixelgui.py" || {
 	echo "GUI-ready runtime marker is missing" >&2
 	exit 1
 }
+grep -q 'def battery_state' "$TMP/rootfs/opt/handai/handai/power.py" &&
+	grep -q 'self.draw_battery' "$TMP/rootfs/opt/handai/handai/pixelgui.py" || {
+	echo "live GUI battery status is missing" >&2
+	exit 1
+}
 grep -q '\[handai\] gui ready OK' "$TMP/rootfs/etc/init.d/S99handai" || {
 	echo "GUI-ready init handshake is missing" >&2
 	exit 1
